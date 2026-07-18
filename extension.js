@@ -482,8 +482,8 @@ const Indicator = GObject.registerClass(
                     style_class: 'ai-usage-breakdown-bar-box',
                     x_expand: true,
                 });
-                // Fill = share of used MCP calls; show as "remaining" so a tool
-                // used heavily appears emptier (more consumed).
+                // Fill = share of used MCP calls; a tool used heavily appears
+                // more filled, consistent with the top-level usage bars.
                 const pctShare = total > 0 ? (item.value / total) * 100 : 0;
                 this._addProgressBar(barBox, pctShare, 100 - pctShare, COLOR_MUTED);
                 row.add_child(barBox);
