@@ -17,7 +17,7 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import { MODEL_COLORS, modelColor } from './colors.js';
+import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
 
 const BASE = 'https://opencode.ai';
@@ -44,10 +44,6 @@ export const opencodeGoProvider = {
     label: 'OpenCode Go',
     logoFile: 'opencode-logo.svg',
     fullColorLogo: true,
-
-    needsAuth(credentials) {
-        return !!(credentials.workspaceId && credentials.authCookie);
-    },
 
     async fetch(session, credentials) {
         const workspaceId = credentials.workspaceId;

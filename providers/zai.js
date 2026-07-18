@@ -9,7 +9,7 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import { MODEL_COLORS, modelColor } from './colors.js';
+import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
 
 /* Z.AI: peak is 14:00–18:00 UTC+8, i.e. 06:00–10:00 UTC. */
@@ -65,10 +65,6 @@ export const zaiProvider = {
     label: 'Z.AI',
     logoFile: 'zai-logo.svg',
     fullColorLogo: true,
-
-    needsAuth(credentials) {
-        return !!(credentials.apiKey || credentials.oauthToken);
-    },
 
     getOAuthConfig(credentials) {
         const endpoint = credentials.endpoint || 'intl';

@@ -6,7 +6,6 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
 import { USER_AGENT } from './constants.js';
 
 const OPENAI_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
@@ -32,10 +31,6 @@ export const openaiProvider = {
     id: 'openai',
     label: 'OpenAI',
     logoFile: 'codex-symbolic.svg',
-
-    needsAuth(credentials) {
-        return !!(credentials.oauthToken);
-    },
 
     async fetch(session, credentials) {
         const headers = getAuthHeaders(credentials);

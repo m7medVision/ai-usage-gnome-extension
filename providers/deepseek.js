@@ -39,10 +39,6 @@ export const deepseekProvider = {
     label: 'DeepSeek',
     logoFile: 'deepseek-symbolic.svg',
 
-    needsAuth(credentials) {
-        return !!(credentials.apiKey);
-    },
-
     async fetch(session, credentials) {
         const headers = getAuthHeaders(credentials);
         if (!headers) return { attempted: false };

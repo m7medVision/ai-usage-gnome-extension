@@ -13,14 +13,7 @@ import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/
 
 import * as config from './config.js';
 import { scanLocalAuthSources } from './local-detect.js';
-
-const PROVIDER_INFO = {
-    zai: { name: 'Z.AI (Zhipu)' },
-    'opencode-go': { name: 'OpenCode Go' },
-    openai: { name: 'OpenAI (ChatGPT Plus/Pro)' },
-    deepseek: { name: 'DeepSeek' },
-    'claude-code': { name: 'Claude Code' },
-};
+import { createDefaultCredentials, PROVIDERS } from './providers/index.js';
 
 export default class AiUsagePreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -155,7 +148,8 @@ export default class AiUsagePreferences extends ExtensionPreferences {
      * "Z.AI (via opencode)") rather than merged into an existing one. */
     _autoDetectAccounts() {
         const found = scanLocalAuthSources();
-        const cfg = config.load();
+        const cfg = this._loadConfig();
+        if (!cfg) return;
 
         const added = [];
         const skipped = [];
@@ -181,15 +175,15 @@ export default class AiUsagePreferences extends ExtensionPreferences {
                 provider: candidate.provider,
                 enabled: true,
                 credentials: {
-                    ...this._defaultCredentials(candidate.provider),
+                    ...createDefaultCredentials(candidate.provider),
                     ...candidate.credentials,
                 },
             });
             added.push(candidate.label);
         }
 
-        if (added.length > 0)
-            config.save(cfg);
+        if (added.length > 0 && !this._saveConfig(cfg))
+            return;
 
         this._renderAccountRows();
         this._showAutoDetectSummary(added, skipped);
@@ -228,13 +222,17 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         // Re-insert before the "add account" group (which is the last child).
         this._page.insert(this._accountsGroup, 0);
 
-        const cfg = config.load();
+        const cfg = this._loadConfig(false);
+        if (!cfg) {
+            this._accountsGroup.description = _('Configuration is invalid. Fix or restore config.json before editing accounts.');
+            return;
+        }
         for (const acc of cfg.accounts)
             this._accountsGroup.add(this._buildAccountRow(acc));
     }
 
     _buildAccountRow(acc) {
-        const provName = PROVIDER_INFO[acc.provider]?.name || acc.provider;
+        const provName = PROVIDERS[acc.provider]?.name || acc.provider;
         const row = new Adw.ExpanderRow({
             title: acc.label || provName,
             subtitle: provName,
@@ -386,46 +384,68 @@ export default class AiUsagePreferences extends ExtensionPreferences {
 
     /* ── Config mutations ── */
 
+    _loadConfig(showError = true) {
+        try {
+            return config.load();
+        } catch (e) {
+            logError(e, 'AI Usage config could not be loaded');
+            if (showError)
+                this._showConfigError(e.message || String(e));
+            return null;
+        }
+    }
+
+    _saveConfig(cfg) {
+        if (config.save(cfg))
+            return true;
+        this._showConfigError(_('Could not save config.json. Check file permissions and logs.'));
+        return false;
+    }
+
+    _showConfigError(message) {
+        const dialog = new Adw.MessageDialog({
+            heading: _('Configuration error'),
+            body: message,
+            transient_for: this._window,
+        });
+        dialog.add_response('ok', _('OK'));
+        dialog.present();
+    }
+
     _updateAccount(accountId, mutator) {
-        const cfg = config.load();
+        const cfg = this._loadConfig();
+        if (!cfg) return;
         const acc = cfg.accounts.find(a => a.id === accountId);
         if (!acc) return;
         if (!acc.credentials) acc.credentials = {};
         mutator(acc);
-        config.save(cfg);
+        this._saveConfig(cfg);
         // Don't re-render rows here — rebuilding destroys the entry widgets
         // while the user is typing in another field. The file monitor in
         // extension.js will pick up the change and refresh the panel.
     }
 
     _removeAccount(accountId) {
-        const cfg = config.load();
+        const cfg = this._loadConfig();
+        if (!cfg) return;
         cfg.accounts = cfg.accounts.filter(a => a.id !== accountId);
-        config.save(cfg);
-        this._renderAccountRows();
+        if (this._saveConfig(cfg))
+            this._renderAccountRows();
     }
 
     _addAccount(provider, label) {
-        const cfg = config.load();
+        const cfg = this._loadConfig();
+        if (!cfg) return;
         const acc = {
             id: config.genId(),
-            label: label || PROVIDER_INFO[provider]?.name || provider,
+            label: label || PROVIDERS[provider]?.name || provider,
             provider,
             enabled: true,
-            credentials: this._defaultCredentials(provider),
+            credentials: createDefaultCredentials(provider),
         };
         cfg.accounts.push(acc);
-        config.save(cfg);
-        this._renderAccountRows();
-    }
-
-    _defaultCredentials(provider) {
-        if (provider === 'zai') return { apiKey: '', oauthToken: '', oauthRefresh: '', oauthExpiry: 0, endpoint: 'intl' };
-        if (provider === 'openai') return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0 };
-        if (provider === 'deepseek') return { apiKey: '' };
-        if (provider === 'opencode-go') return { workspaceId: '', authCookie: '', serverId: '' };
-        if (provider === 'claude-code') return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0, autoDetect: false };
-        return {};
+        if (this._saveConfig(cfg))
+            this._renderAccountRows();
     }
 
     _showAddDialog() {
@@ -441,7 +461,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         });
 
         const providerModel = Gtk.StringList.new(
-            Object.values(PROVIDER_INFO).map(p => p.name));
+            Object.values(PROVIDERS).map(provider => provider.name));
         const providerCombo = new Gtk.DropDown({ model: providerModel });
         box.append(new Gtk.Label({ label: _('Provider'), halign: Gtk.Align.START }));
         box.append(providerCombo);
@@ -459,7 +479,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         dialog.connect('response', (d, response) => {
             if (response === 'add') {
                 const idx = providerCombo.get_selected();
-                const providerId = Object.keys(PROVIDER_INFO)[idx];
+                const providerId = Object.keys(PROVIDERS)[idx];
                 this._addAccount(providerId, labelEntry.get_text().trim());
             }
             d.close();
@@ -498,22 +518,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
 
     async _startZaiOAuth(acc, statusRow, loginBtn, logoutBtn) {
         const c = acc.credentials || {};
-        const endpoint = c.endpoint === 'cn' ? 'cn' : 'intl';
-        const provider = endpoint === 'cn' ? 'bigmodel' : 'zai';
-
-        const oauthUrls = {
-            intl: {
-                init: 'https://api.z.ai/oauth/cli/init',
-                poll: 'https://api.z.ai/oauth/cli/poll',
-                auth: 'https://chat.z.ai',
-            },
-            cn: {
-                init: 'https://open.bigmodel.cn/oauth/cli/init',
-                poll: 'https://open.bigmodel.cn/oauth/cli/poll',
-                auth: 'https://bigmodel.cn',
-            },
-        };
-        const oauthConfig = oauthUrls[endpoint] || oauthUrls.intl;
+        const oauthConfig = PROVIDERS.zai.adapter.getOAuthConfig(c);
 
         loginBtn.sensitive = false;
         loginBtn.label = _('Starting login...');
@@ -521,9 +526,9 @@ export default class AiUsagePreferences extends ExtensionPreferences {
 
         try {
             const session = new Soup.Session();
-            const initBody = JSON.stringify({ provider });
+            const initBody = JSON.stringify({ provider: oauthConfig.provider });
 
-            const initMsg = Soup.Message.new('POST', oauthConfig.init);
+            const initMsg = Soup.Message.new('POST', oauthConfig.initUrl);
             initMsg.set_request_body_from_bytes(
                 'application/json',
                 new GLib.Bytes(new TextEncoder().encode(initBody)));
@@ -559,7 +564,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
                 statusRow.set_subtitle(_(`Open: ${authUrl}`));
             }
 
-            const pollUrl = `${oauthConfig.poll}/${flowId}`;
+            const pollUrl = `${oauthConfig.pollUrl}/${flowId}`;
             const maxAttempts = 120;
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
