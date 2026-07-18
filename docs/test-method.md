@@ -175,20 +175,39 @@ XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 
 ```
 ~/.local/share/gnome-shell/extensions/ai-usage-monitor@ahati/
-├── extension.js          ← Main extension logic
+├── extension.js          ← Composition root (Indicator lifecycle)
 ├── prefs.js              ← Preferences dialog
-├── config.js             ← Account persistence
-├── refresh-loop.js       ← Single-flight polling lifecycle
-├── usage.js              ← Pure usage rules
+├── config.js             ← Account persistence (atomic 0600 write)
+├── local-detect.js       ← Auto-detect CLI credentials (~/.claude, opencode)
+├── domain/               ← Pure rules (no GNOME imports)
+│   ├── usage.js          ← usageLevel, worstPercentUsed, pickPrimaryEntry
+│   ├── peak.js           ← currentPeakStatus
+│   ├── entry-kind.js     ← EntryKind discriminated union
+│   ├── account.js        ← Account value object
+│   ├── usage-entry.js    ← UsageEntry value object
+│   └── usage-result.js   ← UsageResult value object
+├── application/          ← Use-case orchestration
+│   ├── refresh-service.js
+│   ├── single-flight.js
+│   ├── scheduler.js
+│   └── account-repository.js
+├── ui/                   ← Presentation
+│   ├── format.js         ← palette + formatters
+│   ├── usage-color.js    ← severity → color
+│   └── entry-view/       ← per-kind Strategy renderers
+│       ├── index.js      ← dispatcher
+│       ├── percent-view.js
+│       ├── bar-chart-view.js
+│       ├── stacked-bar-chart-view.js
+│       ├── cost-distribution-view.js
+│       ├── peak-status-view.js
+│       └── value-box-view.js
+├── providers/            ← Provider Strategy adapters
+│   ├── index.js          ← Provider registry
+│   ├── zai.js, opencode-go.js, openai.js, deepseek.js, claude-code.js
+│   ├── colors.js, constants.js
 ├── stylesheet.css        ← Panel/menu styling
 ├── metadata.json         ← UUID, version, shell-version
-├── providers/
-│   ├── zai.js            ← Z.AI API (api.z.ai)
-│   ├── opencode-go.js    ← OpenCode Go _server API
-│   ├── openai.js         ← ChatGPT usage API
-│   ├── deepseek.js       ← DeepSeek balance API
-│   ├── claude-code.js    ← Claude Code usage API
-│   └── index.js          ← Provider registry
 └── schemas/
     ├── org.gnome.shell.extensions.ai-usage.gschema.xml
     └── gschemas.compiled

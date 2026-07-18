@@ -1,6 +1,6 @@
 # AI Usage Monitor — GNOME Shell Extension
 
-Monitor usage limits and balances for multiple AI providers directly from the GNOME Shell top panel. Supports **Z.AI**, **OpenCode Go**, **OpenAI (ChatGPT)**, and **DeepSeek** — with multiple accounts per provider.
+Monitor usage limits and balances for multiple AI providers directly from the GNOME Shell top panel. Supports **Z.AI**, **OpenCode Go**, **OpenAI (ChatGPT)**, **DeepSeek**, and **Claude Code** — with multiple accounts per provider.
 
 ## Features
 
@@ -59,6 +59,7 @@ Account credentials are stored in `~/.local/share/.ai-usage-ext/config.json`.
 | OpenCode Go | Workspace ID + cookie | Rolling/weekly/monthly usage |
 | OpenAI | OAuth token | Usage windows + credits |
 | DeepSeek | API key | Account balance |
+| Claude Code | OAuth (auto-detected from `~/.claude`) | Rate-limit utilization windows |
 
 ## License
 
