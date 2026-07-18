@@ -23,9 +23,8 @@ import { worstPercentUsed } from './domain/usage.js';
 import { PROVIDERS } from './providers/index.js';
 import { COLOR_MUTED } from './ui/format.js';
 import { colorForPercent } from './ui/usage-color.js';
-import { addEntry } from './ui/entry-view/index.js';
-import { renderTabs, providerLogo, OVERVIEW_ID } from './ui/tabs.js';
-import { renderOverview } from './ui/overview.js';
+import { renderTabs, providerLogo } from './ui/tabs.js';
+import { renderContent } from './ui/content.js';
 
 const MIN_REFRESH_DELAY_MS = 1000;
 
@@ -171,9 +170,7 @@ const Indicator = GObject.registerClass(
 
         /* Build [{account, provider}] for enabled, authenticated accounts. */
         _getAccounts() {
-            const out = this._accounts.loadEnabled();
-            this._configError = this._accounts.lastError;
-            return out;
+            return this._accounts.loadEnabled();
         }
 
         /* Presentation context handed to every entry renderer. Keeps the
@@ -183,6 +180,8 @@ const Indicator = GObject.registerClass(
                 displayMode: this._settings.get_string('display-mode'),
                 colorForPercent: pct => colorForPercent(pct, this._settings),
                 onPeakTick: fn => { this._peakWidgets.push(fn); },
+                showLogos: this._settings.get_boolean('show-logos'),
+                logoProvider: p => providerLogo(p, this._ext.path),
             };
         }
 
@@ -211,70 +210,13 @@ const Indicator = GObject.registerClass(
             // destroyed labels) don't fire from the ticker.
             this._peakWidgets = [];
 
-            const accounts = this._getAccounts();
-            const ctx = this._entryContext();
-
-            if (this._configError) {
-                this._addError(this._contentBox, this._configError);
-                return;
-            }
-
-            if (this._activeAccountId === OVERVIEW_ID) {
-                this._renderOverview(ctx);
-                return;
-            }
-
-            const active = accounts.find(a => a.account.id === this._activeAccountId);
-            if (!active) {
-                this._addHint(this._contentBox, 'Configure accounts in Preferences…');
-                return;
-            }
-
-            const { account } = active;
-            const res = this._results[account.id];
-            if (!res || !res.attempted) {
-                this._addHint(this._contentBox, 'No data yet — refresh to fetch.');
-                return;
-            }
-
-            if (!res.entries || res.entries.length === 0) {
-                if (res.errors && res.errors.length) {
-                    for (const err of res.errors)
-                        this._addError(this._contentBox, err);
-                } else {
-                    this._addHint(this._contentBox,
-                        'No usage data. Configure this account in Preferences…');
-                }
-                return;
-            }
-
-            let first = true;
-            for (const e of res.entries) {
-                if (!first) this._addSeparator(this._contentBox);
-                first = false;
-                addEntry(this._contentBox, e, ctx);
-            }
-
-            if (res.errors && res.errors.length) {
-                this._addSeparator(this._contentBox);
-                for (const err of res.errors)
-                    this._addError(this._contentBox, err);
-            }
-        }
-
-        /* One compact row per account, showing its primary limit. The
-         * strategy table (5h window > first percent > first entry) and the
-         * right-text formatting live in ui/overview.js so each piece can be
-         * unit-tested without GSettings or widget actors. */
-        _renderOverview(ctx) {
-            renderOverview({
+            renderContent({
                 parent: this._contentBox,
                 accounts: this._getAccounts(),
                 results: this._results,
-                showLogos: this._settings.get_boolean('show-logos'),
-                displayMode: this._settings.get_string('display-mode'),
-                logoProvider: p => providerLogo(p, this._ext.path),
-                colorForPercent: ctx.colorForPercent,
+                activeAccountId: this._activeAccountId,
+                configError: this._accounts.lastError,
+                ctx: this._entryContext(),
                 onSelectAccount: id => {
                     this._activeAccountId = id;
                     this._renderTabs();
@@ -282,27 +224,6 @@ const Indicator = GObject.registerClass(
                 },
             });
         }
-
-        _addHint(parent, text) {
-            parent.add_child(new St.Label({
-                text,
-                style_class: 'ai-usage-usage-subtitle ai-usage-hint',
-            }));
-        }
-
-        _addError(parent, text) {
-            parent.add_child(new St.Label({
-                text: `Error: ${text}`,
-                style: 'color: #ff7800; font-weight: bold; margin-top: 4px;',
-            }));
-        }
-
-        _addSeparator(parent) {
-            parent.add_child(new St.Widget({
-                style: 'height: 1px; background-color: rgba(255,255,255,0.05); margin: 8px 0;',
-            }));
-        }
-
         /* ── Panel update ── */
 
         _updatePanel() {

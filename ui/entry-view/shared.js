@@ -13,6 +13,20 @@ export function addTitle(parent, text) {
     }));
 }
 
+export function addHint(parent, text) {
+    parent.add_child(new St.Label({
+        text,
+        style_class: 'ai-usage-usage-subtitle ai-usage-hint',
+    }));
+}
+
+export function addError(parent, text) {
+    parent.add_child(new St.Label({
+        text: `Error: ${text}`,
+        style: 'color: #ff7800; font-weight: bold; margin-top: 4px;',
+    }));
+}
+
 export function addSeparator(parent) {
     parent.add_child(new St.Widget({
         style: 'height: 1px; background-color: rgba(255,255,255,0.05); margin: 8px 0;',
