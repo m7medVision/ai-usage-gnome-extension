@@ -1,7 +1,11 @@
-import { pickPrimaryEntry, usageLevel, worstPercentUsed } from '../usage.js';
+import { pickPrimaryEntry, usageLevel, worstPercentUsed } from '../domain/usage.js';
+import { currentPeakStatus } from '../domain/peak.js';
 import { RefreshLoop } from '../refresh-loop.js';
-import { currentPeakStatus } from '../providers/peak.js';
 import { PROVIDERS, createDefaultCredentials } from '../providers/index.js';
+import { EntryKind, isPercentEntry } from '../domain/entry-kind.js';
+import { createEntry } from '../domain/usage-entry.js';
+import { createResult, notAttempted } from '../domain/usage-result.js';
+import { createAccount, isAccountEnabled } from '../domain/account.js';
 
 function assertEqual(actual, expected, message) {
     if (actual !== expected)
@@ -175,3 +179,36 @@ await testConcurrentRefreshesUseOneFetch();
 await testRefreshLoopReschedulesAfterFailure();
 testProviderRegistryOwnsFreshCredentialDefaults();
 testClaudeParserKeepsUsageWithInvalidReset();
+
+function testEntryKindIsPercentSelectorsPercentEntriesOnly() {
+    // Arrange + act + assert
+    assertEqual(isPercentEntry({ kind: EntryKind.Percent }), true, 'percent kind selector');
+    assertEqual(isPercentEntry({ kind: EntryKind.BarChart }), false, 'non-percent kind selector');
+    assertEqual(isPercentEntry(null), false, 'null entry selector');
+}
+
+function testEntryFactoryRejectsUnknownKind() {
+    // Arrange + act + assert
+    let threw = false;
+    try { createEntry('nonsense', {}); } catch (_) { threw = true; }
+    if (!threw)
+        throw new Error('createEntry must reject unknown kind');
+}
+
+function testValueObjectsCarryShapeConstraints() {
+    // Arrange + act
+    const account = createAccount({ id: 'acc_x', label: 'L', provider: 'zai' });
+    const result = createResult({ attempted: true, entries: [], errors: ['e'] });
+    const notrun = notAttempted();
+
+    // Assert
+    assertEqual(account.enabled, true, 'default account enabled');
+    assertEqual(isAccountEnabled(account), true, 'enabled account selector');
+    assertEqual(isAccountEnabled({ enabled: false }), false, 'disabled account selector');
+    assertEqual(result.errors.length, 1, 'result passes errors through');
+    assertEqual(notrun.attempted, false, 'notAttempted sentinel');
+}
+
+testEntryKindIsPercentSelectorsPercentEntriesOnly();
+testEntryFactoryRejectsUnknownKind();
+testValueObjectsCarryShapeConstraints();

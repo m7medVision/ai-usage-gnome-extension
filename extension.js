@@ -16,9 +16,9 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as config from './config.js';
 import { RefreshLoop } from './refresh-loop.js';
-import { clampPercent as clamp, pickPrimaryEntry, usageLevel, worstPercentUsed } from './usage.js';
+import { clampPercent as clamp, pickPrimaryEntry, usageLevel, worstPercentUsed } from './domain/usage.js';
+import { currentPeakStatus } from './domain/peak.js';
 import { PROVIDERS } from './providers/index.js';
-import { currentPeakStatus } from './providers/peak.js';
 
 const PROVIDER_REGISTRY = Object.fromEntries(
     Object.entries(PROVIDERS).map(([id, definition]) => [id, definition.adapter]));

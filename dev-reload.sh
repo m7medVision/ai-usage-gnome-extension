@@ -7,9 +7,10 @@ UUID="ai-usage-monitor@ahati"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 
 rm -rf "${EXT_DIR}"
-mkdir -p "${EXT_DIR}/schemas" "${EXT_DIR}/providers"
-cp extension.js prefs.js config.js local-detect.js refresh-loop.js usage.js stylesheet.css metadata.json "${EXT_DIR}/"
+mkdir -p "${EXT_DIR}/schemas" "${EXT_DIR}/providers" "${EXT_DIR}/domain"
+cp extension.js prefs.js config.js local-detect.js refresh-loop.js stylesheet.css metadata.json "${EXT_DIR}/"
 cp providers/*.js "${EXT_DIR}/providers/"
+cp domain/*.js "${EXT_DIR}/domain/"
 cp schemas/*.xml "${EXT_DIR}/schemas/"
 cp -r media "${EXT_DIR}/" 2>/dev/null || true
 glib-compile-schemas "${EXT_DIR}/schemas/"
