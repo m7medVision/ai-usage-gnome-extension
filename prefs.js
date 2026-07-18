@@ -12,12 +12,14 @@ import Soup from 'gi://Soup?version=3.0';
 import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import * as config from './config.js';
+import { scanLocalAuthSources } from './local-detect.js';
 
 const PROVIDER_INFO = {
     zai: { name: 'Z.AI (Zhipu)' },
     'opencode-go': { name: 'OpenCode Go' },
     openai: { name: 'OpenAI (ChatGPT Plus/Pro)' },
     deepseek: { name: 'DeepSeek' },
+    'claude-code': { name: 'Claude Code' },
 };
 
 export default class AiUsagePreferences extends ExtensionPreferences {
@@ -126,6 +128,93 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         addBtn.connect('clicked', () => {
             this._showAddDialog();
         });
+
+        // Auto-detect row: scan local CLI credential stores (Claude Code,
+        // opencode) and import anything not already configured.
+        const detectRow = new Adw.ActionRow({
+            title: _('Auto-detect accounts'),
+            subtitle: _('Scan ~/.claude and ~/.local/share/opencode for local CLI logins.'),
+        });
+        const detectBtn = new Gtk.Button({
+            label: _('Scan'),
+            valign: Gtk.Align.CENTER,
+        });
+        detectRow.add_suffix(detectBtn);
+        detectRow.set_activatable_widget(detectBtn);
+        addGroup.add(detectRow);
+
+        detectBtn.connect('clicked', () => {
+            this._autoDetectAccounts();
+        });
+    }
+
+    /* Scan local CLI credential files and import anything new. Accounts
+     * whose identity (token/key/accountId) already matches a configured
+     * account of the same provider are skipped rather than duplicated;
+     * everything else is added as its own clearly-labeled account (e.g.
+     * "Z.AI (via opencode)") rather than merged into an existing one. */
+    _autoDetectAccounts() {
+        const found = scanLocalAuthSources();
+        const cfg = config.load();
+
+        const added = [];
+        const skipped = [];
+
+        for (const candidate of found) {
+            const sameProvider = cfg.accounts.filter(a => a.provider === candidate.provider);
+            const alreadyConfigured = sameProvider.some(a => {
+                const c = a.credentials || {};
+                return candidate.identityKey && (
+                    c.oauthToken === candidate.identityKey ||
+                    c.apiKey === candidate.identityKey ||
+                    c.accountId === candidate.identityKey);
+            });
+
+            if (alreadyConfigured) {
+                skipped.push(candidate.label);
+                continue;
+            }
+
+            cfg.accounts.push({
+                id: config.genId(),
+                label: candidate.label,
+                provider: candidate.provider,
+                enabled: true,
+                credentials: {
+                    ...this._defaultCredentials(candidate.provider),
+                    ...candidate.credentials,
+                },
+            });
+            added.push(candidate.label);
+        }
+
+        if (added.length > 0)
+            config.save(cfg);
+
+        this._renderAccountRows();
+        this._showAutoDetectSummary(added, skipped);
+    }
+
+    _showAutoDetectSummary(added, skipped) {
+        let body;
+        if (added.length === 0 && skipped.length === 0) {
+            body = _('No local CLI credentials found (~/.claude, ~/.local/share/opencode).');
+        } else {
+            const lines = [];
+            if (added.length > 0)
+                lines.push(_(`Added: ${added.join(', ')}`));
+            if (skipped.length > 0)
+                lines.push(_(`Already configured (skipped): ${skipped.join(', ')}`));
+            body = lines.join('\n');
+        }
+
+        const dialog = new Adw.MessageDialog({
+            heading: _('Auto-detect accounts'),
+            body,
+            transient_for: this._window,
+        });
+        dialog.add_response('ok', _('OK'));
+        dialog.present();
     }
 
     _renderAccountRows() {
@@ -270,6 +359,18 @@ export default class AiUsagePreferences extends ExtensionPreferences {
             row.add_row(this._entryRow(_('API Key'), c.apiKey || '', true, val =>
                 this._updateAccount(acc.id, a => { a.credentials.apiKey = val; })));
         }
+
+        if (acc.provider === 'claude-code') {
+            if (c.autoDetect) {
+                row.add_row(new Adw.ActionRow({
+                    title: _('Source'),
+                    subtitle: _('Auto-detected from ~/.claude/.credentials.json'),
+                }));
+            } else {
+                row.add_row(this._entryRow(_('OAuth Access Token'), c.oauthToken || '', true, val =>
+                    this._updateAccount(acc.id, a => { a.credentials.oauthToken = val; })));
+            }
+        }
     }
 
     _entryRow(title, text, hidden, onApply) {
@@ -323,6 +424,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         if (provider === 'openai') return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0 };
         if (provider === 'deepseek') return { apiKey: '' };
         if (provider === 'opencode-go') return { workspaceId: '', authCookie: '', serverId: '' };
+        if (provider === 'claude-code') return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0, autoDetect: false };
         return {};
     }
 
