@@ -514,5 +514,9 @@ export default class AiUsageExtension extends Extension {
     }
     disable() {
         if (this._indicator) { this._indicator.destroy(); this._indicator = null; }
+        // Module-level provider caches survive enable/disable; reset on every
+        // disable so a fresh enable starts from a clean cache. The GJS module
+        // evaluator only runs once per process, so this is the only path.
+        PROVIDERS['opencode-go']?.resetCache?.();
     }
 }

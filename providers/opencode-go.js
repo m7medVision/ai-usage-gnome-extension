@@ -49,6 +49,14 @@ export const opencodeGoProvider = {
         return { workspaceId: '', authCookie: '', serverId: '' };
     },
 
+    /* Drop the cached x-server-id hashes. GJS does NOT re-evaluate extension
+     * modules on disable→enable — module-level state survives, and a stale
+     * cache after opencode.ai ships a new bundle silently zeroes out the
+     * cost charts. The shell calls this from Extension.disable(). */
+    resetCache() {
+        this._inferredIds = null;
+    },
+
     async fetch(session, credentials) {
         const workspaceId = credentials.workspaceId;
         const authCookie = credentials.authCookie;
