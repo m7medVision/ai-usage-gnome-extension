@@ -250,9 +250,32 @@ const Indicator = GObject.registerClass(
             this._tabsContainer.destroy_all_children();
             const accounts = this._getAccounts();
             const showLogos = this._settings.get_boolean('show-logos');
+            const showOverview = accounts.length > 1;
 
-            if (!accounts.some(a => a.account.id === this._activeAccountId))
-                this._activeAccountId = accounts[0]?.account.id ?? null;
+            const validIds = new Set(accounts.map(a => a.account.id));
+            if (showOverview) validIds.add(OVERVIEW_ID);
+            if (!validIds.has(this._activeAccountId))
+                this._activeAccountId = showOverview ? OVERVIEW_ID : (accounts[0]?.account.id ?? null);
+
+            if (showOverview) {
+                const btn = new St.Button({
+                    style_class: 'ai-usage-tab',
+                    can_focus: true,
+                });
+                btn.set_child(new St.Label({
+                    text: 'Overview',
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+                if (this._activeAccountId === OVERVIEW_ID)
+                    btn.add_style_class_name('ai-usage-tab-active');
+                btn.connect('clicked', () => {
+                    this._activeAccountId = OVERVIEW_ID;
+                    this._renderTabs();
+                    this._renderContent();
+                    return Clutter.EVENT_PROPAGATE;
+                });
+                this._tabsContainer.add_child(btn);
+            }
 
             for (const { account, provider } of accounts) {
                 const btn = new St.Button({
@@ -309,6 +332,12 @@ const Indicator = GObject.registerClass(
             this._peakWidgets = [];
 
             const accounts = this._getAccounts();
+
+            if (this._activeAccountId === OVERVIEW_ID) {
+                this._renderOverview(accounts);
+                return;
+            }
+
             const active = accounts.find(a => a.account.id === this._activeAccountId);
             if (!active) {
                 this._addHint(this._contentBox, 'Configure accounts in Preferences…');
@@ -345,6 +374,117 @@ const Indicator = GObject.registerClass(
                 for (const err of res.errors)
                     this._addError(this._contentBox, err);
             }
+        }
+
+        /* One compact row per account, showing its primary limit (the "5h"
+         * window when present, else the first percent entry, else the first
+         * entry of any kind) — so every provider's headline number is
+         * visible without switching tabs. Clicking a row jumps to that
+         * account's own tab for full detail. */
+        _renderOverview(accounts) {
+            let first = true;
+            for (const { account, provider } of accounts) {
+                if (!first) this._addSeparator(this._contentBox);
+                first = false;
+                this._addOverviewRow(account, provider);
+            }
+        }
+
+        /* Pick the entry that best represents "the" limit for an account's
+         * latest fetch result, plus a status tag for entries/edge-cases that
+         * aren't a plain percent (no data yet, not configured, errored). */
+        _pickPrimaryEntry(res) {
+            if (!res) return { state: 'no-data' };
+            if (!res.attempted) return { state: 'not-configured' };
+            if (!res.entries || res.entries.length === 0) {
+                if (res.errors && res.errors.length)
+                    return { state: 'error', message: res.errors[0] };
+                return { state: 'empty' };
+            }
+
+            const percentEntries = res.entries.filter(e => e.kind === 'percent');
+            if (percentEntries.length > 0) {
+                const fiveHour = percentEntries.find(e => /5h/i.test(e.label || '') || /5h/i.test(e.name || ''));
+                return { state: 'percent', entry: fiveHour || percentEntries[0] };
+            }
+
+            return { state: 'other', entry: res.entries[0] };
+        }
+
+        _addOverviewRow(account, provider) {
+            const res = this._results[account.id];
+            const picked = this._pickPrimaryEntry(res);
+
+            const btn = new St.Button({
+                style_class: 'ai-usage-overview-row',
+                can_focus: true,
+                x_expand: true,
+            });
+            const box = new St.BoxLayout({ vertical: true, x_expand: true });
+
+            const top = new St.BoxLayout({ x_expand: true });
+            const labelBox = new St.BoxLayout({ x_expand: true, y_align: Clutter.ActorAlign.CENTER });
+            if (this._settings.get_boolean('show-logos')) {
+                const logo = this._providerLogo(provider);
+                if (logo) labelBox.add_child(logo);
+            }
+            labelBox.add_child(new St.Label({
+                text: account.label || provider.label,
+                style_class: 'ai-usage-overview-label',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            top.add_child(labelBox);
+
+            const rightText = this._overviewRightText(picked);
+            top.add_child(new St.Label({
+                text: rightText,
+                style_class: 'ai-usage-usage-subtitle ai-usage-usage-subtitle-right',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            box.add_child(top);
+
+            if (picked.state === 'percent') {
+                const pctUsed = clamp(picked.entry.percentUsed ?? (picked.entry.percentRemaining != null
+                    ? 100 - picked.entry.percentRemaining : 0));
+                const pctRemaining = clamp(100 - pctUsed);
+                this._addProgressBar(box, pctUsed, pctRemaining);
+            } else if (picked.state === 'error') {
+                box.add_child(new St.Label({
+                    text: `Error: ${picked.message}`,
+                    style: 'color: #ff7800; font-size: 0.8em; margin-top: 2px;',
+                }));
+            }
+
+            btn.set_child(box);
+            btn.connect('clicked', () => {
+                this._activeAccountId = account.id;
+                this._renderTabs();
+                this._renderContent();
+                return Clutter.EVENT_PROPAGATE;
+            });
+            this._contentBox.add_child(btn);
+        }
+
+        _overviewRightText(picked) {
+            if (picked.state === 'percent') {
+                const e = picked.entry;
+                const pctUsed = clamp(e.percentUsed ?? (e.percentRemaining != null ? 100 - e.percentRemaining : 0));
+                const pctRemaining = clamp(100 - pctUsed);
+                const label = (e.label || '').replace(/:$/, '');
+                const pctText = this._settings.get_string('display-mode') === 'remaining'
+                    ? `${Math.round(pctRemaining)}% left`
+                    : `${Math.round(pctUsed)}% used`;
+                return label ? `${label} · ${pctText}` : pctText;
+            }
+            if (picked.state === 'other') {
+                const e = picked.entry;
+                return e.value != null ? String(e.value) : (e.label || '—');
+            }
+            if (picked.state === 'not-configured') return 'Not configured';
+            if (picked.state === 'no-data') return 'No data yet';
+            if (picked.state === 'empty') return 'No usage data';
+            if (picked.state === 'error') return 'Error';
+            return '—';
         }
 
         _addEntry(parent, e) {
@@ -400,7 +540,7 @@ const Indicator = GObject.registerClass(
          * the MCP breakdown. Returns the DrawingArea (already parented). */
         _addProgressBar(parent, pctUsed, pctRemaining, fillColor = null) {
             const fill = fillColor || usageColor(pctUsed, this._settings);
-            const fraction = clamp(pctRemaining) / 100; // 1.0 = full, 0 = empty
+            const fraction = clamp(pctUsed) / 100; // 1.0 = full (fully used), 0 = empty
 
             const bar = new St.DrawingArea({
                 style_class: 'ai-usage-progress-bar',

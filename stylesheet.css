@@ -104,6 +104,21 @@
     font-style: italic;
 }
 
+/* Overview tab: one compact clickable row per account */
+.ai-usage-overview-row {
+    padding: 8px 4px;
+    border-radius: 6px;
+}
+
+.ai-usage-overview-row:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.ai-usage-overview-label {
+    font-weight: bold;
+    color: #eeeeee;
+}
+
 /* Progress bar: St.DrawingArea painted via Cairo */
 .ai-usage-progress-bar {
     height: 16px;
