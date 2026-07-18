@@ -41,3 +41,24 @@ const mode = Gio.File.new_for_path(config.configPath())
     .get_attribute_uint32('unix::mode') & 0o777;
 if (mode !== 0o600)
     throw new Error(`config permissions: expected 600, got ${mode.toString(8)}`);
+
+// load() must reject valid JSON with the wrong shape, not silently default.
+// Arrange
+GLib.file_set_contents(config.configPath(), new TextEncoder().encode('{"foo":1}'));
+
+// Act + assert
+assertThrows(() => config.load(), config.ConfigError,
+    'valid JSON with wrong shape must throw ConfigError');
+
+// User-facing error messages must not leak the absolute path (and thus the
+// username) — they end up in the panel and the journal.
+try {
+    config.load();
+} catch (e) {
+    if (e.message.includes(GLib.get_user_data_dir()))
+        throw new Error('ConfigError message must not contain the absolute path');
+}
+
+// Re-save a valid config so subsequent assertions start from a clean state.
+if (!config.save({ version: 1, accounts: [] }))
+    throw new Error('save after shape-failure test should succeed');
