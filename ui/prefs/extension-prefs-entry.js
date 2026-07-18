@@ -1,347 +1,34 @@
-/* AI Usage Monitor - Preferences Dialog
- *
- * Multi-account preferences. Account credentials are stored in a JSON
- * config file (see config.js). General UI settings stay in gsettings.
- */
-
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import Gtk from 'gi://Gtk';
 import Adw from 'gi://Adw';
 import Soup from 'gi://Soup?version=3.0';
-import { ExtensionPreferences, gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+import {
+    ExtensionPreferences,
+    gettext as _,
+} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import * as config from '../../config.js';
-import { scanLocalAuthSources } from '../../local-detect.js';
-import { createDefaultCredentials, PROVIDERS } from '../../providers/index.js';
+import { PROVIDERS } from '../../providers/index.js';
+import { GtkAccountRepository } from './account-repository-gtk.js';
+import { AccountsPage } from './accounts-page.js';
 import { buildGeneralPage } from './general-page.js';
 import { buildRefreshPage } from './refresh-page.js';
 
 export default class AiUsagePreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
+        this._window = window;
+        this._repository = new GtkAccountRepository({
+            onError: message => this._showConfigError(message),
+        });
 
         buildGeneralPage(window, settings);
-        this._buildAccountsPage(window);
+        this._accountsPage = new AccountsPage({
+            window,
+            repository: this._repository,
+            onStartZaiOAuth: (account, statusRow, login, logout) =>
+                this._startZaiOAuth(account, statusRow, login, logout),
+        });
         buildRefreshPage(window, settings);
-    }
-
-    /* ── Accounts page (JSON config) ── */
-
-    _buildAccountsPage(window) {
-        this._window = window;
-        this._page = new Adw.PreferencesPage({
-            title: _('Accounts'), icon_name: 'preferences-system-symbolic',
-        });
-        window.add(this._page);
-
-        this._accountsGroup = new Adw.PreferencesGroup({
-            title: _('Configured Accounts'),
-            description: _('Each account fetches usage independently.'),
-        });
-        this._page.add(this._accountsGroup);
-
-        this._renderAccountRows();
-
-        // Add account row
-        const addGroup = new Adw.PreferencesGroup();
-        this._page.add(addGroup);
-
-        const addRow = new Adw.ActionRow({
-            title: _('Add Account'),
-            subtitle: _('Choose a provider and create a new account.'),
-        });
-        const addBtn = new Gtk.Button({
-            label: _('Add'),
-            css_classes: ['suggested-action'],
-            valign: Gtk.Align.CENTER,
-        });
-        addRow.add_suffix(addBtn);
-        addRow.set_activatable_widget(addBtn);
-        addGroup.add(addRow);
-
-        addBtn.connect('clicked', () => {
-            this._showAddDialog();
-        });
-
-        // Auto-detect row: scan local CLI credential stores (Claude Code,
-        // opencode) and import anything not already configured.
-        const detectRow = new Adw.ActionRow({
-            title: _('Auto-detect accounts'),
-            subtitle: _('Scan ~/.claude and ~/.local/share/opencode for local CLI logins.'),
-        });
-        const detectBtn = new Gtk.Button({
-            label: _('Scan'),
-            valign: Gtk.Align.CENTER,
-        });
-        detectRow.add_suffix(detectBtn);
-        detectRow.set_activatable_widget(detectBtn);
-        addGroup.add(detectRow);
-
-        detectBtn.connect('clicked', () => {
-            this._autoDetectAccounts();
-        });
-    }
-
-    /* Scan local CLI credential files and import anything new. Accounts
-     * whose identity (token/key/accountId) already matches a configured
-     * account of the same provider are skipped rather than duplicated;
-     * everything else is added as its own clearly-labeled account (e.g.
-     * "Z.AI (via opencode)") rather than merged into an existing one. */
-    _autoDetectAccounts() {
-        const found = scanLocalAuthSources();
-        const cfg = this._loadConfig();
-        if (!cfg) return;
-
-        const added = [];
-        const skipped = [];
-
-        for (const candidate of found) {
-            const sameProvider = cfg.accounts.filter(a => a.provider === candidate.provider);
-            const alreadyConfigured = sameProvider.some(a => {
-                const c = a.credentials || {};
-                return candidate.identityKey && (
-                    c.oauthToken === candidate.identityKey ||
-                    c.apiKey === candidate.identityKey ||
-                    c.accountId === candidate.identityKey);
-            });
-
-            if (alreadyConfigured) {
-                skipped.push(candidate.label);
-                continue;
-            }
-
-            cfg.accounts.push({
-                id: config.genId(),
-                label: candidate.label,
-                provider: candidate.provider,
-                enabled: true,
-                credentials: {
-                    ...createDefaultCredentials(candidate.provider),
-                    ...candidate.credentials,
-                },
-            });
-            added.push(candidate.label);
-        }
-
-        if (added.length > 0 && !this._saveConfig(cfg))
-            return;
-
-        this._renderAccountRows();
-        this._showAutoDetectSummary(added, skipped);
-    }
-
-    _showAutoDetectSummary(added, skipped) {
-        let body;
-        if (added.length === 0 && skipped.length === 0) {
-            body = _('No local CLI credentials found (~/.claude, ~/.local/share/opencode).');
-        } else {
-            const lines = [];
-            if (added.length > 0)
-                lines.push(_(`Added: ${added.join(', ')}`));
-            if (skipped.length > 0)
-                lines.push(_(`Already configured (skipped): ${skipped.join(', ')}`));
-            body = lines.join('\n');
-        }
-
-        const dialog = new Adw.MessageDialog({
-            heading: _('Auto-detect accounts'),
-            body,
-            transient_for: this._window,
-        });
-        dialog.add_response('ok', _('OK'));
-        dialog.present();
-    }
-
-    _renderAccountRows() {
-        // Clear existing rows: Adw.PreferencesGroup has no get_rows(), so
-        // rebuild the group from scratch.
-        this._page.remove(this._accountsGroup);
-        this._accountsGroup = new Adw.PreferencesGroup({
-            title: _('Configured Accounts'),
-            description: _('Each account fetches usage independently.'),
-        });
-        // Re-insert before the "add account" group (which is the last child).
-        this._page.insert(this._accountsGroup, 0);
-
-        const cfg = this._loadConfig(false);
-        if (!cfg) {
-            this._accountsGroup.description = _('Configuration is invalid. Fix or restore config.json before editing accounts.');
-            return;
-        }
-        for (const acc of cfg.accounts)
-            this._accountsGroup.add(this._buildAccountRow(acc));
-    }
-
-    _buildAccountRow(acc) {
-        const provName = PROVIDERS[acc.provider]?.name || acc.provider;
-        const row = new Adw.ExpanderRow({
-            title: acc.label || provName,
-            subtitle: provName,
-        });
-
-        // Enabled switch
-        const switchBtn = new Gtk.Switch({
-            active: acc.enabled !== false,
-            valign: Gtk.Align.CENTER,
-        });
-        row.add_suffix(switchBtn);
-        switchBtn.connect('notify::active', w => {
-            this._updateAccount(acc.id, a => { a.enabled = w.active; });
-        });
-
-        // Label field
-        const labelBox = new Gtk.Box({
-            orientation: Gtk.Orientation.VERTICAL, spacing: 6,
-            margin_top: 12, margin_bottom: 12, margin_start: 12, margin_end: 12,
-        });
-
-        const labelEntry = new Adw.EntryRow({ title: _('Account label') });
-        labelEntry.set_text(acc.label || '');
-        labelEntry.set_show_apply_button(true);
-        labelBox.append(labelEntry);
-        labelEntry.connect('apply', () => {
-            this._updateAccount(acc.id, a => { a.label = labelEntry.get_text().trim(); });
-        });
-
-        row.add_row(labelBox);
-
-        // Provider-specific credential fields (added as additional rows)
-        this._addCredentialRows(row, acc);
-
-        // Remove button
-        const removeBox = new Gtk.Box({
-            orientation: Gtk.Orientation.HORIZONTAL,
-            halign: Gtk.Align.CENTER,
-            margin_top: 12, margin_bottom: 12,
-        });
-        const removeBtn = new Gtk.Button({
-            label: _('Remove Account'),
-            css_classes: ['destructive-action'],
-        });
-        removeBox.append(removeBtn);
-        row.add_row(removeBox);
-
-        removeBtn.connect('clicked', () => {
-            this._removeAccount(acc.id);
-        });
-
-        return row;
-    }
-
-    _addCredentialRows(row, acc) {
-        const c = acc.credentials || {};
-
-        if (acc.provider === 'zai') {
-            // Endpoint
-            const endpointRow = new Adw.ComboRow({
-                title: _('Region'),
-                model: Gtk.StringList.new([_('International (api.z.ai)'), _('China (open.bigmodel.cn)')]),
-                selected: c.endpoint === 'cn' ? 1 : 0,
-            });
-            row.add_row(endpointRow);
-            endpointRow.connect('notify::selected', r => {
-                this._updateAccount(acc.id, a => {
-                    a.credentials.endpoint = r.selected === 1 ? 'cn' : 'intl';
-                });
-            });
-
-            // API key
-            row.add_row(this._entryRow(_('API Key'), c.apiKey || '', true, val =>
-                this._updateAccount(acc.id, a => { a.credentials.apiKey = val; })));
-
-            // OAuth
-            const oauthRow = new Adw.ActionRow({ title: _('OAuth Login') });
-            row.add_row(oauthRow);
-            const loginBtn = new Gtk.Button({
-                label: _('Log In with Z.AI'),
-                css_classes: ['suggested-action'],
-                valign: Gtk.Align.CENTER,
-            });
-            const logoutBtn = new Gtk.Button({
-                label: _('Log Out'),
-                css_classes: ['destructive-action'],
-                valign: Gtk.Align.CENTER,
-                visible: !!(c.oauthToken),
-            });
-            oauthRow.add_suffix(loginBtn);
-            oauthRow.add_suffix(logoutBtn);
-            loginBtn.connect('clicked', () => {
-                this._startZaiOAuth(acc, oauthRow, loginBtn, logoutBtn);
-            });
-            logoutBtn.connect('clicked', () => {
-                this._updateAccount(acc.id, a => {
-                    a.credentials.oauthToken = '';
-                    a.credentials.oauthRefresh = '';
-                    a.credentials.oauthExpiry = 0;
-                });
-                logoutBtn.visible = false;
-            });
-        }
-
-        if (acc.provider === 'opencode-go') {
-            row.add_row(this._entryRow(_('Workspace ID'), c.workspaceId || '', false, val =>
-                this._updateAccount(acc.id, a => { a.credentials.workspaceId = val; })));
-            row.add_row(this._entryRow(_('Auth Cookie'), c.authCookie || '', true, val =>
-                this._updateAccount(acc.id, a => { a.credentials.authCookie = val; })));
-            row.add_row(this._entryRow(_('Server ID (x-server-id)'), c.serverId || '', false, val =>
-                this._updateAccount(acc.id, a => { a.credentials.serverId = val; })));
-        }
-
-        if (acc.provider === 'openai') {
-            row.add_row(this._entryRow(_('OAuth Access Token'), c.oauthToken || '', true, val =>
-                this._updateAccount(acc.id, a => { a.credentials.oauthToken = val; })));
-            row.add_row(this._entryRow(_('Refresh Token (optional)'), c.oauthRefresh || '', true, val =>
-                this._updateAccount(acc.id, a => { a.credentials.oauthRefresh = val; })));
-        }
-
-        if (acc.provider === 'deepseek') {
-            row.add_row(this._entryRow(_('API Key'), c.apiKey || '', true, val =>
-                this._updateAccount(acc.id, a => { a.credentials.apiKey = val; })));
-        }
-
-        if (acc.provider === 'claude-code') {
-            if (c.autoDetect) {
-                row.add_row(new Adw.ActionRow({
-                    title: _('Source'),
-                    subtitle: _('Auto-detected from ~/.claude/.credentials.json'),
-                }));
-            } else {
-                row.add_row(this._entryRow(_('OAuth Access Token'), c.oauthToken || '', true, val =>
-                    this._updateAccount(acc.id, a => { a.credentials.oauthToken = val; })));
-            }
-        }
-    }
-
-    _entryRow(title, text, hidden, onApply) {
-        const entry = new Adw.EntryRow({ title });
-        entry.set_text(text);
-        entry.set_show_apply_button(true);
-        if (hidden) entry.visibility = false;
-        entry.connect('apply', () => {
-            onApply(entry.get_text().trim());
-        });
-        return entry;
-    }
-
-    /* ── Config mutations ── */
-
-    _loadConfig(showError = true) {
-        try {
-            return config.load();
-        } catch (e) {
-            logError(e, 'AI Usage config could not be loaded');
-            if (showError)
-                this._showConfigError(e.message || String(e));
-            return null;
-        }
-    }
-
-    _saveConfig(cfg) {
-        if (config.save(cfg))
-            return true;
-        this._showConfigError(_('Could not save config.json. Check file permissions and logs.'));
-        return false;
     }
 
     _showConfigError(message) {
@@ -354,87 +41,11 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         dialog.present();
     }
 
-    _updateAccount(accountId, mutator) {
-        const cfg = this._loadConfig();
-        if (!cfg) return;
-        const acc = cfg.accounts.find(a => a.id === accountId);
-        if (!acc) return;
-        if (!acc.credentials) acc.credentials = {};
-        mutator(acc);
-        this._saveConfig(cfg);
-        // Don't re-render rows here — rebuilding destroys the entry widgets
-        // while the user is typing in another field. The file monitor in
-        // extension.js will pick up the change and refresh the panel.
-    }
-
-    _removeAccount(accountId) {
-        const cfg = this._loadConfig();
-        if (!cfg) return;
-        cfg.accounts = cfg.accounts.filter(a => a.id !== accountId);
-        if (this._saveConfig(cfg))
-            this._renderAccountRows();
-    }
-
-    _addAccount(provider, label) {
-        const cfg = this._loadConfig();
-        if (!cfg) return;
-        const acc = {
-            id: config.genId(),
-            label: label || PROVIDERS[provider]?.name || provider,
-            provider,
-            enabled: true,
-            credentials: createDefaultCredentials(provider),
-        };
-        cfg.accounts.push(acc);
-        if (this._saveConfig(cfg))
-            this._renderAccountRows();
-    }
-
-    _showAddDialog() {
-        const dialog = new Adw.MessageDialog({
-            heading: _('Add Account'),
-            body: _('Choose a provider and optional label.'),
-            transient_for: this._window,
-        });
-
-        const box = new Gtk.Box({
-            orientation: Gtk.Orientation.VERTICAL, spacing: 12,
-            margin_top: 12, margin_bottom: 12,
-        });
-
-        const providerModel = Gtk.StringList.new(
-            Object.values(PROVIDERS).map(provider => provider.name));
-        const providerCombo = new Gtk.DropDown({ model: providerModel });
-        box.append(new Gtk.Label({ label: _('Provider'), halign: Gtk.Align.START }));
-        box.append(providerCombo);
-
-        const labelEntry = new Gtk.Entry({ placeholder_text: _('Account label (optional)') });
-        box.append(new Gtk.Label({ label: _('Label'), halign: Gtk.Align.START }));
-        box.append(labelEntry);
-
-        dialog.set_extra_child(box);
-
-        dialog.add_response('cancel', _('Cancel'));
-        dialog.add_response('add', _('Add'));
-        dialog.set_response_appearance('add', Adw.ResponseAppearance.SUGGESTED);
-
-        dialog.connect('response', (d, response) => {
-            if (response === 'add') {
-                const idx = providerCombo.get_selected();
-                const providerId = Object.keys(PROVIDERS)[idx];
-                this._addAccount(providerId, labelEntry.get_text().trim());
-            }
-            d.close();
-        });
-
-        dialog.present();
-    }
-
-    /* ── Z.AI OAuth flow ── */
-
-    async _startZaiOAuth(acc, statusRow, loginBtn, logoutBtn) {
-        const c = acc.credentials || {};
-        const oauthConfig = PROVIDERS.zai.getOAuthConfig(c);
+    /* Temporary ownership: Commit J moves this HTTP/polling use case to
+     * zai-oauth-flow.js and adds cancellation on window close. */
+    async _startZaiOAuth(account, statusRow, loginBtn, logoutBtn) {
+        const credentials = account.credentials || {};
+        const oauthConfig = PROVIDERS.zai.getOAuthConfig(credentials);
 
         loginBtn.sensitive = false;
         loginBtn.label = _('Starting login...');
@@ -442,98 +53,50 @@ export default class AiUsagePreferences extends ExtensionPreferences {
 
         try {
             const session = new Soup.Session();
-            const initBody = JSON.stringify({ provider: oauthConfig.provider });
+            const initResult = await sendJson(
+                session,
+                Soup.Message.new('POST', oauthConfig.initUrl),
+                JSON.stringify({ provider: oauthConfig.provider }));
 
-            const initMsg = Soup.Message.new('POST', oauthConfig.initUrl);
-            initMsg.set_request_body_from_bytes(
-                'application/json',
-                new GLib.Bytes(new TextEncoder().encode(initBody)));
-
-            const initResult = await new Promise((resolve, reject) => {
-                session.send_and_read_async(initMsg, GLib.PRIORITY_DEFAULT, null,
-                    (s, res) => {
-                        try {
-                            const bytes = s.send_and_read_finish(res);
-                            const body = new TextDecoder().decode(
-                                bytes?.get_data() ?? new Uint8Array(0));
-                            resolve({ status: initMsg.get_status(), body });
-                        } catch (e) { reject(e); }
-                    });
-            });
-
-            if (initResult.status !== 200) {
+            if (initResult.status !== 200)
                 throw new Error(`OAuth init failed: HTTP ${initResult.status}`);
-            }
 
             const initData = JSON.parse(initResult.body);
             const authUrl = initData.authorize_url ?? initData.data?.authorize_url;
             const flowId = initData.flow_id ?? initData.data?.flow_id;
             const pollToken = initData.poll_token ?? initData.data?.poll_token;
-
             if (!authUrl || !flowId)
                 throw new Error('Unexpected OAuth init response');
 
             statusRow.set_subtitle(_('Open browser to complete login...'));
             loginBtn.label = _('Waiting for authentication...');
-
             try { Gio.AppInfo.launch_default_for_uri(authUrl, null); } catch (e) {
                 statusRow.set_subtitle(_(`Open: ${authUrl}`));
             }
 
             const pollUrl = `${oauthConfig.pollUrl}/${flowId}`;
-            const maxAttempts = 120;
-
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                await this._sleep(1000);
+            for (let attempt = 1; attempt <= 120; attempt++) {
+                await sleep(1000);
                 loginBtn.label = _(`Waiting... (${attempt}s)`);
-
-                const pollMsg = Soup.Message.new('GET', pollUrl);
+                const message = Soup.Message.new('GET', pollUrl);
                 if (pollToken)
-                    pollMsg.get_request_headers().append('Authorization', `Bearer ${pollToken}`);
+                    message.get_request_headers().append('Authorization', `Bearer ${pollToken}`);
+                const result = await send(session, message);
+                if (result.status !== 200) continue;
 
-                const pollResult = await new Promise((resolve, reject) => {
-                    session.send_and_read_async(pollMsg, GLib.PRIORITY_DEFAULT, null,
-                        (s, res) => {
-                            try {
-                                const bytes = s.send_and_read_finish(res);
-                                const body = new TextDecoder().decode(
-                                    bytes?.get_data() ?? new Uint8Array(0));
-                                resolve({ status: pollMsg.get_status(), body });
-                            } catch (e) { reject(e); }
-                        });
-                });
-
-                if (pollResult.status !== 200) continue;
-
-                const pollData = JSON.parse(pollResult.body);
-                const status = pollData.status ?? pollData.data?.status ?? 'pending';
-
+                const data = JSON.parse(result.body);
+                const status = data.status ?? data.data?.status ?? 'pending';
                 if (status === 'ready') {
-                    const token = pollData.token ?? pollData.access_token
-                        ?? pollData.data?.token ?? pollData.data?.access_token;
-                    const refreshToken = pollData.refresh_token ?? pollData.data?.refresh_token ?? '';
-                    const expiresIn = pollData.expires_in ?? pollData.data?.expires_in ?? 0;
-
-                    if (!token) throw new Error('OAuth succeeded but no token returned');
-
-                    this._updateAccount(acc.id, a => {
-                        a.credentials.oauthToken = token;
-                        if (refreshToken) a.credentials.oauthRefresh = refreshToken;
-                        if (expiresIn > 0)
-                            a.credentials.oauthExpiry = Math.floor(Date.now() / 1000) + expiresIn;
-                    });
-
+                    this._completeOAuth(account.id, data);
                     statusRow.set_subtitle(_('Logged in via OAuth'));
                     loginBtn.label = _('Log In with Z.AI');
                     loginBtn.sensitive = true;
                     logoutBtn.visible = true;
                     return;
-                } else if (status === 'failed') {
-                    const errMsg = pollData.message ?? pollData.error ?? 'Authentication failed';
-                    throw new Error(errMsg);
                 }
+                if (status === 'failed')
+                    throw new Error(data.message ?? data.error ?? 'Authentication failed');
             }
-
             throw new Error('Authentication timed out. Please try again.');
         } catch (e) {
             logError(e, 'Z.AI OAuth flow failed');
@@ -543,12 +106,49 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         }
     }
 
-    _sleep(ms) {
-        return new Promise(resolve => {
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-                resolve();
-                return GLib.SOURCE_REMOVE;
-            });
+    _completeOAuth(accountId, data) {
+        const token = data.token ?? data.access_token
+            ?? data.data?.token ?? data.data?.access_token;
+        const refreshToken = data.refresh_token ?? data.data?.refresh_token ?? '';
+        const expiresIn = data.expires_in ?? data.data?.expires_in ?? 0;
+        if (!token)
+            throw new Error('OAuth succeeded but no token returned');
+
+        this._repository.update(accountId, account => {
+            account.credentials.oauthToken = token;
+            if (refreshToken) account.credentials.oauthRefresh = refreshToken;
+            if (expiresIn > 0)
+                account.credentials.oauthExpiry = Math.floor(Date.now() / 1000) + expiresIn;
         });
     }
+}
+
+function sendJson(session, message, body) {
+    message.set_request_body_from_bytes(
+        'application/json', new GLib.Bytes(new TextEncoder().encode(body)));
+    return send(session, message);
+}
+
+function send(session, message) {
+    return new Promise((resolve, reject) => {
+        session.send_and_read_async(message, GLib.PRIORITY_DEFAULT, null, (source, result) => {
+            try {
+                const bytes = source.send_and_read_finish(result);
+                const body = new TextDecoder().decode(
+                    bytes?.get_data() ?? new Uint8Array(0));
+                resolve({ status: message.get_status(), body });
+            } catch (e) {
+                reject(e);
+            }
+        });
+    });
+}
+
+function sleep(ms) {
+    return new Promise(resolve => {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+            resolve();
+            return GLib.SOURCE_REMOVE;
+        });
+    });
 }
