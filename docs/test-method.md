@@ -175,8 +175,8 @@ XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 
 ```
 ~/.local/share/gnome-shell/extensions/ai-usage-monitor@ahati/
-├── extension.js          ← Composition root (Indicator lifecycle)
-├── prefs.js              ← Preferences dialog
+├── extension.js          ← Shell entry shim
+├── prefs.js              ← Preferences entry shim
 ├── config.js             ← Account persistence (atomic 0600 write)
 ├── local-detect.js       ← Auto-detect CLI credentials (~/.claude, opencode)
 ├── domain/               ← Pure rules (no GNOME imports)
@@ -188,12 +188,17 @@ XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 │   └── usage-result.js   ← UsageResult value object
 ├── application/          ← Use-case orchestration
 │   ├── refresh-service.js
+│   ├── fetch-service.js
 │   ├── single-flight.js
 │   ├── scheduler.js
 │   └── account-repository.js
 ├── ui/                   ← Presentation
+│   ├── extension-entry.js, indicator.js
+│   ├── tabs.js, overview.js, content.js, menu.js
+│   ├── panel-icon.js, peak-ticker.js, config-monitor.js
 │   ├── format.js         ← palette + formatters
 │   ├── usage-color.js    ← severity → color
+│   ├── prefs/            ← Adwaita pages, account CRUD, OAuth, credential Strategies
 │   └── entry-view/       ← per-kind Strategy renderers
 │       ├── index.js      ← dispatcher
 │       ├── percent-view.js

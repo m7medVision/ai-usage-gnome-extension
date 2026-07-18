@@ -37,6 +37,7 @@ gnome-extensions enable ai-usage-monitor@ahati
    - **OpenCode Go**: Workspace ID + auth cookie (from browser DevTools)
    - **OpenAI**: OAuth access token
    - **DeepSeek**: API key (from [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys))
+   - **Claude Code**: Use **Auto-detect accounts** to read `~/.claude/.credentials.json`
 4. The panel updates automatically
 
 ## Configuration
@@ -50,6 +51,12 @@ gnome-extensions enable ai-usage-monitor@ahati
 | Refresh interval | How often to fetch data | 300s |
 
 Account credentials are stored in `~/.local/share/.ai-usage-ext/config.json`.
+
+## Development
+
+- Architecture and extension rules: [`docs/architecture.md`](docs/architecture.md)
+- Tests: `./tests/run.sh`
+- Nested GNOME Shell workflow: [`docs/test-method.md`](docs/test-method.md)
 
 ## Supported Providers
 
