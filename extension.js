@@ -8,9 +8,6 @@
 
 import GObject from 'gi://GObject';
 import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
-import St from 'gi://St';
-import Clutter from 'gi://Clutter';
 import Soup from 'gi://Soup?version=3.0';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -21,10 +18,13 @@ import { RefreshService } from './application/refresh-service.js';
 import { AccountRepository } from './application/account-repository.js';
 import { worstPercentUsed } from './domain/usage.js';
 import { PROVIDERS } from './providers/index.js';
-import { COLOR_MUTED } from './ui/format.js';
 import { colorForPercent } from './ui/usage-color.js';
 import { renderTabs, providerLogo } from './ui/tabs.js';
 import { renderContent } from './ui/content.js';
+import { createPanelIcon, updatePanelIcon } from './ui/panel-icon.js';
+import { buildMenu } from './ui/menu.js';
+import { createPeakTicker } from './ui/peak-ticker.js';
+import { createConfigMonitor } from './ui/config-monitor.js';
 
 const MIN_REFRESH_DELAY_MS = 1000;
 
@@ -52,120 +52,38 @@ const Indicator = GObject.registerClass(
                 cancel: sourceId => GLib.source_remove(sourceId),
             });
 
-            /* ── Panel: gauge icon, colored by usage severity ── */
-            this._panelIcon = new St.Icon({
-                icon_name: 'stopwatch-symbolic',
-                style_class: 'ai-usage-panel-icon',
-            });
+            this._panelIcon = createPanelIcon();
             this.add_child(this._panelIcon);
 
-            this._buildMenu();
+            const menu = buildMenu({
+                menuBox: this.menu.box,
+                onRefresh: () => this._refreshNow(),
+                onOpenPreferences: () => {
+                    this._ext.openPreferences();
+                    this.menu.close();
+                },
+            });
+            this._headerTitle = menu.headerTitle;
+            this._refreshBtn = menu.refreshBtn;
+            this._tabsContainer = menu.tabsContainer;
+            this._contentBox = menu.contentBox;
+
             this._settingsId = this._settings.connect('changed', () => {
                 this._scheduleRefresh();
             });
-            this._setupConfigMonitor();
+            this._configMonitor = createConfigMonitor(
+                config.configPath(), () => this._scheduleRefresh());
             this._scheduleRefresh();
 
             /* Peak-status ticker: ticks every 1s while the menu is open so
              * the traffic-light countdown stays live. Started on open, stopped
              * on close — never runs with the menu hidden. */
             this._peakWidgets = null;     // populated by renderers via ctx.onPeakTick
-            this._peakTickerId = 0;
+            this._peakTicker = createPeakTicker(() => this._peakWidgets);
             this.menu.connect('open-state-changed', (menu, open) => {
-                if (open) this._startPeakTicker();
-                else this._stopPeakTicker();
+                if (open) this._peakTicker.start();
+                else this._peakTicker.stop();
             });
-        }
-
-        _startPeakTicker() {
-            if (this._peakTickerId) return;
-            this._peakTickerId = GLib.timeout_add_seconds(
-                GLib.PRIORITY_DEFAULT, 1, () => {
-                    if (this._peakWidgets) {
-                        for (const u of this._peakWidgets) {
-                            try { u(); } catch (e) { log(`[ai-usage] peak tick: ${e}`); }
-                        }
-                    }
-                    return GLib.SOURCE_CONTINUE;
-                });
-        }
-
-        _stopPeakTicker() {
-            if (this._peakTickerId) {
-                GLib.source_remove(this._peakTickerId);
-                this._peakTickerId = 0;
-            }
-        }
-
-        _buildMenu() {
-            this.menu.box.add_style_class_name('ai-usage-popup');
-
-            // Header row
-            this._headerBox = new St.BoxLayout({
-                style_class: 'ai-usage-header',
-                x_expand: true,
-            });
-            this._headerTitle = new St.Label({
-                text: 'AI Usage',
-                style_class: 'ai-usage-header-title',
-                x_expand: true,
-                y_align: Clutter.ActorAlign.CENTER,
-            });
-            this._headerBox.add_child(this._headerTitle);
-
-            this._refreshBtn = this._iconButton('view-refresh-symbolic');
-            this._refreshBtn.connect('clicked', () => {
-                this._refreshNow();
-                return Clutter.EVENT_PROPAGATE;
-            });
-            this._headerBox.add_child(this._refreshBtn);
-
-            this._settingsBtn = this._iconButton('preferences-system-symbolic');
-            this._settingsBtn.connect('clicked', () => {
-                this._ext.openPreferences();
-                this.menu.close();
-                return Clutter.EVENT_PROPAGATE;
-            });
-            this._headerBox.add_child(this._settingsBtn);
-            this.menu.box.add_child(this._headerBox);
-
-            // Provider tabs row
-            this._tabsContainer = new St.BoxLayout({
-                style_class: 'ai-usage-tabs-container',
-            });
-            this.menu.box.add_child(this._tabsContainer);
-
-            // Content area
-            this._contentBox = new St.BoxLayout({
-                style_class: 'ai-usage-usage-section',
-                vertical: true,
-            });
-            this.menu.box.add_child(this._contentBox);
-        }
-
-        _iconButton(iconName) {
-            const btn = new St.Button({
-                style_class: 'ai-usage-header-button',
-                can_focus: true,
-            });
-            btn.set_child(new St.Icon({
-                icon_name: iconName,
-                style_class: 'ai-usage-header-button-icon',
-            }));
-            return btn;
-        }
-
-        /* Watch config.json for external changes (e.g. prefs edits). */
-        _setupConfigMonitor() {
-            const file = Gio.File.new_for_path(config.configPath());
-            try {
-                this._configMonitor = file.monitor_file(Gio.FileMonitorFlags.NONE, null);
-                this._configMonitorId = this._configMonitor.connect('changed', () => {
-                    this._scheduleRefresh();
-                });
-            } catch (e) {
-                log(`[ai-usage] could not monitor config: ${e}`);
-            }
         }
 
         /* Build [{account, provider}] for enabled, authenticated accounts. */
@@ -229,9 +147,7 @@ const Indicator = GObject.registerClass(
         _updatePanel() {
             const accounts = this._getAccounts().map(({ account }) => account);
             const percentUsed = worstPercentUsed(accounts, this._results);
-            this._panelIcon.set_style(`color: ${
-                percentUsed === null ? COLOR_MUTED : colorForPercent(percentUsed, this._settings)
-            };`);
+            updatePanelIcon(this._panelIcon, percentUsed, this._settings);
         }
 
         /* ── Fetching ── */
@@ -282,17 +198,10 @@ const Indicator = GObject.registerClass(
             this._destroyed = true;
             this._refresh.stop();
             this._session.abort();
-            this._stopPeakTicker();
+            this._peakTicker.stop();
             this._peakWidgets = null;
             if (this._settingsId) { this._settings.disconnect(this._settingsId); this._settingsId = 0; }
-            if (this._configMonitorId && this._configMonitor) {
-                this._configMonitor.disconnect(this._configMonitorId);
-                this._configMonitorId = 0;
-            }
-            if (this._configMonitor) {
-                this._configMonitor.cancel();
-                this._configMonitor = null;
-            }
+            this._configMonitor.dispose();
             super.destroy();
         }
     }
