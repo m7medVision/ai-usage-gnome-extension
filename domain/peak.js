@@ -22,7 +22,7 @@ export function currentPeakStatus(now = new Date(), windows = []) {
     const fracHour = hour + min / 60 + sec / 3600;
 
     if (windows.length === 0)
-        return { inPeak: false, msToChange: 0 };
+        return { inPeak: false, msToChange: null };
 
     const inPeak = windows.some(([start, end]) => start < end
         ? fracHour >= start && fracHour < end

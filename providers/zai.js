@@ -11,6 +11,7 @@ import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
 import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
+import { clampPercent } from '../domain/usage.js';
 
 /* Z.AI: peak is 14:00–18:00 UTC+8, i.e. 06:00–10:00 UTC. */
 const ZAI_PEAK_WINDOWS_UTC = [[6, 10]];
@@ -36,10 +37,6 @@ function fmtLocal(date) {
     const p = n => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ` +
            `${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
-}
-
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
 }
 
 /* Compact calls formatter for legend totals: 1234 → "1.2K calls". */

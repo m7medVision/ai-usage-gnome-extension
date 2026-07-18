@@ -61,7 +61,7 @@ function testEmptyPeakWindowsAreStable() {
     const status = currentPeakStatus(now, []);
 
     // Assert
-    assertEqual(status.msToChange, 0, 'empty peak countdown');
+    assertEqual(status.msToChange, null, 'empty peak countdown is null, not 0');
 }
 
 function testOvernightPeakWindowWrapsMidnight() {

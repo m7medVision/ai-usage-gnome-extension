@@ -53,7 +53,7 @@ export function fmtReset(iso) {
 /* Format milliseconds as a compact H:MM:SS or MM:SS countdown for the live
  * peak-status indicator. */
 export function fmtHMS(ms) {
-    if (ms <= 0) return 'now';
+    if (ms === null || ms === undefined || ms <= 0) return 'now';
     const totalSec = Math.floor(ms / 1000);
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);

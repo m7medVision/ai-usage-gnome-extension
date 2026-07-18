@@ -19,6 +19,7 @@ import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
 import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
+import { clampPercent } from '../domain/usage.js';
 
 const BASE = 'https://opencode.ai';
 
@@ -26,10 +27,6 @@ const BASE = 'https://opencode.ai';
  * dashboard: a deepseek-v4-pro call with cost:374228 displays as $0.0037,
  * giving a divisor of 374228 / 0.0037 ≈ 101,142,703. */
 const COST_DIVISOR = 101142703;
-
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
-}
 
 /* Format raw cost units as dollars. */
 function fmtCost(rawCost) {

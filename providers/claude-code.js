@@ -34,6 +34,7 @@ import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
 import { USER_AGENT } from './constants.js';
 import { detectClaudeCode } from '../local-detect.js';
+import { clampPercent } from '../domain/usage.js';
 
 const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -47,10 +48,6 @@ const WINDOW_LABELS = {
     '7d-opus': ['Claude Code Weekly (Opus)', 'Weekly Opus:'],
     '7d-sonnet': ['Claude Code Weekly (Sonnet)', 'Weekly Sonnet:'],
 };
-
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
-}
 
 /* Parse the flat anthropic-ratelimit-unified-<window>-{utilization,reset}
  * headers into percent entries. Generic over whatever <window> keys are
