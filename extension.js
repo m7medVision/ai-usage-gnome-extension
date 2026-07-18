@@ -20,12 +20,14 @@ import { currentPeakStatus } from './providers/peak.js';
 import { opencodeGoProvider } from './providers/opencode-go.js';
 import { openaiProvider } from './providers/openai.js';
 import { deepseekProvider } from './providers/deepseek.js';
+import { claudeCodeProvider } from './providers/claude-code.js';
 
 const PROVIDER_REGISTRY = {
     zai: zaiProvider,
     'opencode-go': opencodeGoProvider,
     openai: openaiProvider,
     deepseek: deepseekProvider,
+    'claude-code': claudeCodeProvider,
 };
 
 /* Adwaita-derived palette */
@@ -36,6 +38,7 @@ const COLOR_RED = '#e01b24';
 const COLOR_MUTED = '#9ca3af';
 
 const BAR_WIDTH = 290;        // popup progress bar track width
+const OVERVIEW_ID = '__overview__';
 
 function clamp(v) { return Math.max(0, Math.min(100, v)); }
 
