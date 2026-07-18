@@ -9,7 +9,7 @@ export function importDetectedAccounts(existingAccounts, candidates, dependencie
             continue;
         }
         accounts.push({
-            id: candidate.id || dependencies.createId(),
+            id: dependencies.createId(),
             label: candidate.label,
             provider: candidate.provider,
             enabled: true,

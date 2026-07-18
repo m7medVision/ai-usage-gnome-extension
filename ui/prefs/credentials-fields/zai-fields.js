@@ -35,14 +35,7 @@ export function renderZaiFields(row, account, context) {
     });
     login.connect('clicked', () =>
         context.onStartZaiOAuth(account, oauthRow, login, logout));
-    logout.connect('clicked', () => {
-        context.onUpdate(account.id, value => {
-            value.credentials.oauthToken = '';
-            value.credentials.oauthRefresh = '';
-            value.credentials.oauthExpiry = 0;
-        });
-        logout.visible = false;
-    });
+    logout.connect('clicked', () => context.onLogoutZaiOAuth(account, logout));
     oauthRow.add_suffix(login);
     oauthRow.add_suffix(logout);
     row.add_row(oauthRow);

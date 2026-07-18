@@ -439,11 +439,6 @@ function hourOf(s) {
     return m ? Number(m[1]) : -1;
 }
 
-/* Extract the date portion "YYYY-MM-DD" from an API time label. */
-function dateOf(s) {
-    return s.substring(0, 10);
-}
-
 /* Z.AI charges extra during peak hours 14:00–18:00 UTC+8. Off-peak is cheaper.
  * These colors highlight which 4-hour buckets fall in the peak window. */
 const PEAK_COLOR = '#e01b24';     // red — peak surcharge window
@@ -453,13 +448,6 @@ const OFFPEAK_COLOR = '#26a269';  // green — off-peak
  * colors each bucket by whether its start hour (UTC+8) is the peak start. */
 const PEAK_START_HOUR_UTC8 = 14;
 
-/* Compute the aligned 4h bucket-start hour (UTC+8) for a given hour, so the
- * peak window 14–18 is exactly one clean bucket per day. Boundaries fall at
- * 02 / 06 / 10 / 14 / 18 / 22. A bucket is "peak" iff it starts at 14. */
-function bucketStartHour(hour) {
-    const offset = (((hour - PEAK_START_HOUR_UTC8) % 4) + 4) % 4;
-    return hour - offset;
-}
 function isPeakBucket(bucketStart) {
     return bucketStart === PEAK_START_HOUR_UTC8;
 }

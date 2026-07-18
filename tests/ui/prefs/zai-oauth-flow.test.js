@@ -1,6 +1,7 @@
 import {
     parseTokens,
     runZaiOAuth,
+    validateAuthorizeUrl,
 } from '../../../ui/prefs/zai-oauth-flow.js';
 
 function assertEqual(actual, expected, message) {
@@ -26,7 +27,7 @@ async function testReadyFlowReturnsTokens() {
             if (request.method === 'POST') {
                 return {
                     status: 200,
-                    body: JSON.stringify({ authorize_url: 'https://auth', flow_id: 'flow' }),
+                    body: JSON.stringify({ authorize_url: 'https://chat.z.ai', flow_id: 'flow' }),
                 };
             }
             return {
@@ -56,7 +57,7 @@ async function testCancellationStopsBeforePollRequest() {
             requestCount += 1;
             return {
                 status: 200,
-                body: JSON.stringify({ authorize_url: 'https://auth', flow_id: 'flow' }),
+                body: JSON.stringify({ authorize_url: 'https://chat.z.ai', flow_id: 'flow' }),
             };
         },
         sleep: async () => { control.cancel(); },
@@ -73,6 +74,28 @@ function testNestedTokenShape() {
     assertEqual(tokens.expiresIn, 60, 'nested expiry');
 }
 
+async function testCancelledBeforeStartSendsNoRequest() {
+    const control = cancellable();
+    control.cancel();
+    let requestCount = 0;
+    const result = await runZaiOAuth({
+        oauthConfig: { initUrl: 'https://init', pollUrl: 'https://poll', provider: 'zai' },
+        cancellable: control,
+        request: async () => { requestCount += 1; },
+    });
+    assertEqual(result.cancelled, true, 'pre-cancelled result');
+    assertEqual(requestCount, 0, 'pre-cancelled request count');
+}
+
+function testAuthorizeUrlAllowlist() {
+    validateAuthorizeUrl('https://chat.z.ai/oauth', 'zai');
+    let rejected = false;
+    try { validateAuthorizeUrl('file:///tmp/fake-login', 'zai'); } catch (e) { rejected = true; }
+    assertEqual(rejected, true, 'non-HTTPS authorization URI rejected');
+}
+
 await testReadyFlowReturnsTokens();
 await testCancellationStopsBeforePollRequest();
+await testCancelledBeforeStartSendsNoRequest();
 testNestedTokenShape();
+testAuthorizeUrlAllowlist();

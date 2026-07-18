@@ -6,56 +6,75 @@ export async function runZaiOAuth({
     oauthConfig,
     cancellable,
     events = {},
-    request = sendRequest,
+    request,
     sleep = delay,
     openUri = uri => Gio.AppInfo.launch_default_for_uri(uri, null),
     maxAttempts = 120,
 }) {
-    events.initializing?.();
-    const init = await request({
-        method: 'POST',
-        url: oauthConfig.initUrl,
-        body: JSON.stringify({ provider: oauthConfig.provider }),
-        cancellable,
-    });
     if (isCancelled(cancellable)) return { cancelled: true };
-    if (init.status !== 200)
-        throw new Error(`OAuth init failed: HTTP ${init.status}`);
+    const session = request ? null : new Soup.Session();
+    const transport = request ?? (params => sendRequest(session, params));
 
-    const initData = JSON.parse(init.body);
-    const authUrl = initData.authorize_url ?? initData.data?.authorize_url;
-    const flowId = initData.flow_id ?? initData.data?.flow_id;
-    const pollToken = initData.poll_token ?? initData.data?.poll_token;
-    if (!authUrl || !flowId)
-        throw new Error('Unexpected OAuth init response');
-
-    events.waitingForBrowser?.(authUrl);
-    try { openUri(authUrl); } catch (e) { events.browserFallback?.(authUrl); }
-
-    const pollUrl = `${oauthConfig.pollUrl}/${flowId}`;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await sleep(1000, cancellable);
-        if (isCancelled(cancellable)) return { cancelled: true };
-        events.polling?.(attempt);
-
-        const result = await request({
-            method: 'GET',
-            url: pollUrl,
-            bearerToken: pollToken,
+    try {
+        events.initializing?.();
+        const init = await transport({
+            method: 'POST',
+            url: oauthConfig.initUrl,
+            body: JSON.stringify({ provider: oauthConfig.provider }),
             cancellable,
         });
         if (isCancelled(cancellable)) return { cancelled: true };
-        if (result.status !== 200) continue;
+        if (init.status !== 200)
+            throw new Error(`OAuth init failed: HTTP ${init.status}`);
 
-        const data = JSON.parse(result.body);
-        const status = data.status ?? data.data?.status ?? 'pending';
-        if (status === 'ready')
-            return parseTokens(data);
-        if (status === 'failed')
-            throw new Error(data.message ?? data.error ?? 'Authentication failed');
+        const initData = JSON.parse(init.body);
+        const authUrl = initData.authorize_url ?? initData.data?.authorize_url;
+        const flowId = initData.flow_id ?? initData.data?.flow_id;
+        const pollToken = initData.poll_token ?? initData.data?.poll_token;
+        if (!authUrl || !flowId)
+            throw new Error('Unexpected OAuth init response');
+        validateAuthorizeUrl(authUrl, oauthConfig.provider);
+
+        events.waitingForBrowser?.(authUrl);
+        try { openUri(authUrl); } catch (e) { events.browserFallback?.(authUrl); }
+
+        const pollUrl = `${oauthConfig.pollUrl}/${flowId}`;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            await sleep(1000, cancellable);
+            if (isCancelled(cancellable)) return { cancelled: true };
+            events.polling?.(attempt);
+
+            const result = await transport({
+                method: 'GET',
+                url: pollUrl,
+                bearerToken: pollToken,
+                cancellable,
+            });
+            if (isCancelled(cancellable)) return { cancelled: true };
+            if (result.status !== 200) continue;
+
+            const data = JSON.parse(result.body);
+            const status = data.status ?? data.data?.status ?? 'pending';
+            if (status === 'ready')
+                return parseTokens(data);
+            if (status === 'failed')
+                throw new Error(data.message ?? data.error ?? 'Authentication failed');
+        }
+
+        throw new Error('Authentication timed out. Please try again.');
+    } finally {
+        session?.abort();
     }
+}
 
-    throw new Error('Authentication timed out. Please try again.');
+export function validateAuthorizeUrl(authorizeUrl, provider) {
+    const uri = GLib.Uri.parse(authorizeUrl, GLib.UriFlags.NONE);
+    const host = uri.get_host()?.toLowerCase();
+    const allowedHosts = provider === 'bigmodel'
+        ? new Set(['bigmodel.cn', 'open.bigmodel.cn'])
+        : new Set(['chat.z.ai', 'z.ai']);
+    if (uri.get_scheme()?.toLowerCase() !== 'https' || !allowedHosts.has(host))
+        throw new Error('Unexpected OAuth authorization URL');
 }
 
 export function parseTokens(data) {
@@ -70,8 +89,7 @@ export function parseTokens(data) {
     };
 }
 
-function sendRequest({ method, url, body, bearerToken, cancellable }) {
-    const session = new Soup.Session();
+function sendRequest(session, { method, url, body, bearerToken, cancellable }) {
     const message = Soup.Message.new(method, url);
     if (body) {
         message.set_request_body_from_bytes(

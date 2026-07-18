@@ -26,9 +26,12 @@ export default class AiUsagePreferences extends ExtensionPreferences {
             repository: this._repository,
             onStartZaiOAuth: (account, statusRow, login, logout) =>
                 this._startZaiOAuth(account, statusRow, login, logout),
+            onLogoutZaiOAuth: (account, logout) =>
+                this._logoutZaiOAuth(account, logout),
         });
         buildRefreshPage(window, settings);
         window.connect('close-request', () => {
+            this._closing = true;
             this._cancelOAuth();
             return false;
         });
@@ -48,6 +51,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         this._cancelOAuth();
         const cancellable = new Gio.Cancellable();
         this._oauthCancellable = cancellable;
+        this._oauthAccountId = account.id;
         loginBtn.sensitive = false;
 
         try {
@@ -67,9 +71,16 @@ export default class AiUsagePreferences extends ExtensionPreferences {
                     polling: attempt => { loginBtn.label = _(`Waiting... (${attempt}s)`); },
                 },
             });
-            if (result.cancelled) return;
+            if (result.cancelled) {
+                if (!this._closing) {
+                    statusRow.set_subtitle(_('Login cancelled'));
+                    loginBtn.label = _('Log In with Z.AI');
+                    loginBtn.sensitive = true;
+                }
+                return;
+            }
 
-            this._repository.update(account.id, changed => {
+            const saved = this._repository.update(account.id, changed => {
                 changed.credentials.oauthToken = result.token;
                 if (result.refreshToken)
                     changed.credentials.oauthRefresh = result.refreshToken;
@@ -78,6 +89,8 @@ export default class AiUsagePreferences extends ExtensionPreferences {
                         Math.floor(Date.now() / 1000) + result.expiresIn;
                 }
             });
+            if (!saved)
+                throw new Error('Could not save OAuth credentials');
             statusRow.set_subtitle(_('Logged in via OAuth'));
             loginBtn.label = _('Log In with Z.AI');
             loginBtn.sensitive = true;
@@ -91,11 +104,26 @@ export default class AiUsagePreferences extends ExtensionPreferences {
         } finally {
             if (this._oauthCancellable === cancellable)
                 this._oauthCancellable = null;
+            if (this._oauthAccountId === account.id)
+                this._oauthAccountId = null;
         }
+    }
+
+    _logoutZaiOAuth(account, logoutBtn) {
+        if (this._oauthAccountId === account.id)
+            this._cancelOAuth();
+        const saved = this._repository.update(account.id, changed => {
+            changed.credentials.oauthToken = '';
+            changed.credentials.oauthRefresh = '';
+            changed.credentials.oauthExpiry = 0;
+        });
+        if (saved)
+            logoutBtn.visible = false;
     }
 
     _cancelOAuth() {
         this._oauthCancellable?.cancel();
         this._oauthCancellable = null;
+        this._oauthAccountId = null;
     }
 }

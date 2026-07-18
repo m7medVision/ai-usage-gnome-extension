@@ -10,7 +10,7 @@
     "49",
     "50"
   ],
-  "version": 1,
+  "version": 2,
   "settings-schema": "org.gnome.shell.extensions.ai-usage",
   "url": "https://z.ai",
   "gettext-domain": "ai-usage-monitor"

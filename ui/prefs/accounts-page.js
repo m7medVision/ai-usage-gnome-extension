@@ -12,11 +12,13 @@ export class AccountsPage {
     #page;
     #accountsGroup;
     #onStartZaiOAuth;
+    #onLogoutZaiOAuth;
 
-    constructor({ window, repository, onStartZaiOAuth }) {
+    constructor({ window, repository, onStartZaiOAuth, onLogoutZaiOAuth }) {
         this.#window = window;
         this.#repository = repository;
         this.#onStartZaiOAuth = onStartZaiOAuth;
+        this.#onLogoutZaiOAuth = onLogoutZaiOAuth;
         this.#page = new Adw.PreferencesPage({
             title: _('Accounts'),
             icon_name: 'preferences-system-symbolic',
@@ -47,6 +49,7 @@ export class AccountsPage {
                     if (this.#repository.remove(id)) this.render();
                 },
                 onStartZaiOAuth: this.#onStartZaiOAuth,
+                onLogoutZaiOAuth: this.#onLogoutZaiOAuth,
             }));
         }
     }

@@ -481,11 +481,8 @@ export const opencodeGoProvider = {
      * color = its model. Records arrive in SSR with the newest first. */
     _buildRollingModelChart(html) {
         // Each per-request record inlines: model:"X", ..., cost:N, ...
-        // paired with timeCreated:$R[..]=new Date("ISO"). Extract all three
         // in stream order (newest first).
-        const records = [];
         const recRe = /model:"([^"]+)"[\s\S]{0,400}?cost:(\d+)/g;
-        const timeRe = /timeCreated:\$R\[\d+\]=new Date\("([^"]+)"\)/g;
 
         const models = [];
         const costs = [];
@@ -494,10 +491,6 @@ export const opencodeGoProvider = {
             models.push(m[1]);
             costs.push(Number(m[2]));
         }
-        const times = [];
-        while ((m = timeRe.exec(html)) !== null)
-            times.push(new Date(m[1]).getTime());
-
         if (models.length === 0 || costs.length === 0) return null;
 
         // The /usage page already returns the 50 most recent records. Pair

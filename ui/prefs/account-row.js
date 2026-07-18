@@ -5,7 +5,13 @@ import { gettext as _ } from 'resource:///org/gnome/Shell/Extensions/js/extensio
 import { PROVIDERS } from '../../providers/index.js';
 import { renderCredentialFields } from './credentials-fields/index.js';
 
-export function buildAccountRow({ account, onUpdate, onRemove, onStartZaiOAuth }) {
+export function buildAccountRow({
+    account,
+    onUpdate,
+    onRemove,
+    onStartZaiOAuth,
+    onLogoutZaiOAuth,
+}) {
     const providerName = PROVIDERS[account.provider]?.name || account.provider;
     const row = new Adw.ExpanderRow({
         title: account.label || providerName,
@@ -34,7 +40,11 @@ export function buildAccountRow({ account, onUpdate, onRemove, onStartZaiOAuth }
     labelBox.append(labelEntry);
     row.add_row(labelBox);
 
-    renderCredentialFields(row, account, { onUpdate, onStartZaiOAuth });
+    renderCredentialFields(row, account, {
+        onUpdate,
+        onStartZaiOAuth,
+        onLogoutZaiOAuth,
+    });
 
     const removeBox = new Gtk.Box({
         orientation: Gtk.Orientation.HORIZONTAL,

@@ -6,7 +6,7 @@
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import { fmtNum, fmtReset, COLOR_MUTED } from '../format.js';
-import { addTitle, addProgressBar, addLegendFlow } from './shared.js';
+import { addTitle, addProgressBar } from './shared.js';
 
 const clamp = v => Math.max(0, Math.min(100, v));
 
