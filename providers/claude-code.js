@@ -56,10 +56,6 @@ export const claudeCodeProvider = {
     id: 'claude-code',
     label: 'Claude Code',
 
-    needsAuth(credentials) {
-        return !!(credentials.autoDetect || credentials.oauthToken);
-    },
-
     async fetch(session, credentials) {
         let token = credentials.oauthToken;
         if (credentials.autoDetect) {
@@ -134,7 +130,10 @@ export const claudeCodeProvider = {
             const util = parseFloat(headers[`anthropic-ratelimit-unified-${key}-utilization`]);
             if (Number.isNaN(util)) continue;
             const resetRaw = headers[`anthropic-ratelimit-unified-${key}-reset`];
-            const resetTimeIso = resetRaw ? new Date(parseInt(resetRaw, 10) * 1000).toISOString() : null;
+            const resetSeconds = Number.parseInt(resetRaw, 10);
+            const resetTimeIso = Number.isFinite(resetSeconds)
+                ? new Date(resetSeconds * 1000).toISOString()
+                : null;
 
             const [name, label] = WINDOW_LABELS[key] || [`Claude Code ${key}`, `${key}:`];
             const usedPct = util <= 1 ? util * 100 : util;

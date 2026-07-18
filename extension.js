@@ -15,20 +15,13 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as config from './config.js';
-import { zaiProvider } from './providers/zai.js';
+import { RefreshLoop } from './refresh-loop.js';
+import { clampPercent as clamp, pickPrimaryEntry, usageLevel, worstPercentUsed } from './usage.js';
+import { PROVIDERS } from './providers/index.js';
 import { currentPeakStatus } from './providers/peak.js';
-import { opencodeGoProvider } from './providers/opencode-go.js';
-import { openaiProvider } from './providers/openai.js';
-import { deepseekProvider } from './providers/deepseek.js';
-import { claudeCodeProvider } from './providers/claude-code.js';
 
-const PROVIDER_REGISTRY = {
-    zai: zaiProvider,
-    'opencode-go': opencodeGoProvider,
-    openai: openaiProvider,
-    deepseek: deepseekProvider,
-    'claude-code': claudeCodeProvider,
-};
+const PROVIDER_REGISTRY = Object.fromEntries(
+    Object.entries(PROVIDERS).map(([id, definition]) => [id, definition.adapter]));
 
 /* Adwaita-derived palette */
 const COLOR_GREEN = '#2ec27e';
@@ -37,10 +30,7 @@ const COLOR_ORANGE = '#ff7800';
 const COLOR_RED = '#e01b24';
 const COLOR_MUTED = '#9ca3af';
 
-const BAR_WIDTH = 290;        // popup progress bar track width
 const OVERVIEW_ID = '__overview__';
-
-function clamp(v) { return Math.max(0, Math.min(100, v)); }
 
 /* Parse #RRGGBB into [r, g, b, a] (0–1 floats) for Cairo. */
 function _hexToRgba(hex) {
@@ -95,13 +85,15 @@ function fmtHMS(ms) {
 }
 
 function usageColor(displayed, settings) {
-    if (displayed === null || displayed === undefined) return COLOR_MUTED;
     const high = settings.get_int('high-usage-threshold');
     const crit = settings.get_int('critical-usage-threshold');
-    if (displayed >= crit) return COLOR_RED;
-    if (displayed >= high) return COLOR_ORANGE;
-    if (displayed >= 50) return COLOR_YELLOW;
-    return COLOR_GREEN;
+    return {
+        unknown: COLOR_MUTED,
+        critical: COLOR_RED,
+        high: COLOR_ORANGE,
+        medium: COLOR_YELLOW,
+        low: COLOR_GREEN,
+    }[usageLevel(displayed, high, crit)];
 }
 
 const Indicator = GObject.registerClass(
@@ -111,9 +103,19 @@ const Indicator = GObject.registerClass(
             super._init(0.0, 'AI Usage');
             this._ext = ext;
             this._settings = ext.getSettings();
-            this._pollId = 0;
+            this._destroyed = false;
+            this._session = new Soup.Session();
             this._results = {};              // keyed by account id
             this._activeAccountId = null;
+            this._refreshLoop = new RefreshLoop({
+                fetch: () => this._fetchAll(),
+                schedule: (delayMs, callback) => GLib.timeout_add(
+                    GLib.PRIORITY_DEFAULT, Math.max(1000, delayMs), () => {
+                        callback().catch(e => logError(e));
+                        return GLib.SOURCE_REMOVE;
+                    }),
+                cancel: sourceId => GLib.source_remove(sourceId),
+            });
 
             /* ── Panel: gauge icon, colored by usage severity ── */
             this._panelIcon = new St.Icon({
@@ -124,7 +126,7 @@ const Indicator = GObject.registerClass(
 
             this._buildMenu();
             this._settingsId = this._settings.connect('changed', () => {
-                this._scheduleRefresh(0);
+                this._scheduleRefresh();
             });
             this._setupConfigMonitor();
             this._scheduleRefresh();
@@ -224,7 +226,7 @@ const Indicator = GObject.registerClass(
             try {
                 this._configMonitor = file.monitor_file(Gio.FileMonitorFlags.NONE, null);
                 this._configMonitorId = this._configMonitor.connect('changed', () => {
-                    this._scheduleRefresh(0);
+                    this._scheduleRefresh();
                 });
             } catch (e) {
                 log(`[ai-usage] could not monitor config: ${e}`);
@@ -233,7 +235,15 @@ const Indicator = GObject.registerClass(
 
         /* Build [{account, provider}] for enabled, authenticated accounts. */
         _getAccounts() {
-            const cfg = config.load();
+            let cfg;
+            try {
+                cfg = config.load();
+                this._configError = null;
+            } catch (e) {
+                logError(e, 'AI Usage config could not be loaded');
+                this._configError = e.message || String(e);
+                return [];
+            }
             const out = [];
             for (const acc of cfg.accounts) {
                 if (!acc.enabled) continue;
@@ -333,6 +343,11 @@ const Indicator = GObject.registerClass(
 
             const accounts = this._getAccounts();
 
+            if (this._configError) {
+                this._addError(this._contentBox, this._configError);
+                return;
+            }
+
             if (this._activeAccountId === OVERVIEW_ID) {
                 this._renderOverview(accounts);
                 return;
@@ -394,21 +409,7 @@ const Indicator = GObject.registerClass(
          * latest fetch result, plus a status tag for entries/edge-cases that
          * aren't a plain percent (no data yet, not configured, errored). */
         _pickPrimaryEntry(res) {
-            if (!res) return { state: 'no-data' };
-            if (!res.attempted) return { state: 'not-configured' };
-            if (!res.entries || res.entries.length === 0) {
-                if (res.errors && res.errors.length)
-                    return { state: 'error', message: res.errors[0] };
-                return { state: 'empty' };
-            }
-
-            const percentEntries = res.entries.filter(e => e.kind === 'percent');
-            if (percentEntries.length > 0) {
-                const fiveHour = percentEntries.find(e => /5h/i.test(e.label || '') || /5h/i.test(e.name || ''));
-                return { state: 'percent', entry: fiveHour || percentEntries[0] };
-            }
-
-            return { state: 'other', entry: res.entries[0] };
+            return pickPrimaryEntry(res);
         }
 
         _addOverviewRow(account, provider) {
@@ -954,11 +955,6 @@ const Indicator = GObject.registerClass(
             return swatch;
         }
 
-        _displayedValue(pctUsed, pctRemaining) {
-            return this._settings.get_string('display-mode') === 'remaining'
-                ? pctRemaining : pctUsed;
-        }
-
         _addTitle(parent, text) {
             parent.add_child(new St.Label({
                 text,
@@ -989,25 +985,10 @@ const Indicator = GObject.registerClass(
         /* ── Panel update ── */
 
         _updatePanel() {
-            let worstRemaining = null;
-            for (const { account } of this._getAccounts()) {
-                const r = this._results[account.id];
-                if (!r || !r.attempted) continue;
-                for (const e of r.entries) {
-                    if (e.kind === 'percent') {
-                        const rem = e.percentRemaining != null
-                            ? clamp(e.percentRemaining)
-                            : clamp(100 - (e.percentUsed ?? 0));
-                        if (worstRemaining === null || rem < worstRemaining)
-                            worstRemaining = rem;
-                    }
-                }
-            }
-
-            if (worstRemaining !== null) {
-                const pctUsed = clamp(100 - worstRemaining);
-                const displayed = this._displayedValue(pctUsed, clamp(worstRemaining));
-                const color = usageColor(displayed, this._settings);
+            const accounts = this._getAccounts().map(({ account }) => account);
+            const percentUsed = worstPercentUsed(accounts, this._results);
+            if (percentUsed !== null) {
+                const color = usageColor(percentUsed, this._settings);
                 this._panelIcon.set_style(`color: ${color};`);
             } else {
                 this._panelIcon.set_style(`color: ${COLOR_MUTED};`);
@@ -1017,20 +998,24 @@ const Indicator = GObject.registerClass(
         /* ── Fetching ── */
 
         async _fetchAll() {
-            const s = new Soup.Session();
             const accounts = this._getAccounts();
             log(`[ai-usage] Fetching ${accounts.length} account(s)`);
-            const ps = accounts.map(({ account, provider }) =>
-                provider.fetch(s, account.credentials).then(r => {
-                    this._results[account.id] = r;
-                    log(`[ai-usage] ${account.label}: attempted=${r.attempted} entries=${r.entries?.length || 0} errors=${r.errors?.length || 0}`);
-                }).catch(e => {
-                    this._results[account.id] = {
+            const results = await Promise.all(accounts.map(async ({ account, provider }) => {
+                try {
+                    const result = await provider.fetch(this._session, account.credentials);
+                    log(`[ai-usage] ${account.label}: attempted=${result.attempted} entries=${result.entries?.length || 0} errors=${result.errors?.length || 0}`);
+                    return [account.id, result];
+                } catch (e) {
+                    return [account.id, {
                         attempted: true, entries: [],
                         errors: [`${account.label}: ${e.message || e}`],
-                    };
-                }));
-            await Promise.all(ps);
+                    }];
+                }
+            }));
+            if (this._destroyed)
+                return;
+            for (const [accountId, result] of results)
+                this._results[accountId] = result;
             this._updatePanel();
             this._renderTabs();
             this._renderContent();
@@ -1040,34 +1025,34 @@ const Indicator = GObject.registerClass(
             this._refreshBtn.reactive = false;
             this._headerTitle.set_text('AI Usage (Refreshing…)');
             try {
-                await this._fetchAll();
+                await this._refreshLoop.refresh();
             } finally {
-                this._headerTitle.set_text('AI Usage');
-                this._refreshBtn.reactive = true;
+                if (!this._destroyed) {
+                    this._headerTitle.set_text('AI Usage');
+                    this._refreshBtn.reactive = true;
+                }
             }
         }
 
         _scheduleRefresh(delayMs) {
-            if (this._pollId) { GLib.source_remove(this._pollId); this._pollId = 0; }
-            const iv = delayMs ?? (this._settings.get_int('refresh-interval') * 1000);
-            this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT,
-                Math.max(1, Math.floor(iv / 1000)), () => {
-                    this._pollId = 0;
-                    this._fetchAll().catch(e => logError(e));
-                    this._scheduleRefresh();
-                    return GLib.SOURCE_REMOVE;
-                });
-            this._fetchAll().catch(e => logError(e));
+            const interval = delayMs ?? this._settings.get_int('refresh-interval') * 1000;
+            this._refreshLoop.start(interval).catch(e => logError(e));
         }
 
         destroy() {
+            this._destroyed = true;
+            this._refreshLoop.stop();
+            this._session.abort();
             this._stopPeakTicker();
             this._peakWidgets = null;
-            if (this._pollId) { GLib.source_remove(this._pollId); this._pollId = 0; }
             if (this._settingsId) { this._settings.disconnect(this._settingsId); this._settingsId = 0; }
             if (this._configMonitorId && this._configMonitor) {
                 this._configMonitor.disconnect(this._configMonitorId);
                 this._configMonitorId = 0;
+            }
+            if (this._configMonitor) {
+                this._configMonitor.cancel();
+                this._configMonitor = null;
             }
             super.destroy();
         }
