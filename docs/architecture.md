@@ -62,7 +62,7 @@ normalization.
 - `credentials-fields/`: Strategy per provider's credential fields.
 - `account-repository-gtk.js`: GTK-side config CRUD and dialog error boundary.
 - `account-detection.js`: pure import/deduplication policy.
-- `zai-oauth-flow.js`: cancellable OAuth state machine.
+- `providers/zai-oauth.js`: cancellable OAuth transport/state machine; Preferences injects browser/UI callbacks.
 
 ## Patterns
 

@@ -6,11 +6,11 @@ import {
 } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import { PROVIDERS } from '../../providers/index.js';
+import { runZaiOAuth } from '../../providers/zai-oauth.js';
 import { GtkAccountRepository } from './account-repository-gtk.js';
 import { AccountsPage } from './accounts-page.js';
 import { buildGeneralPage } from './general-page.js';
 import { buildRefreshPage } from './refresh-page.js';
-import { runZaiOAuth } from './zai-oauth-flow.js';
 
 export default class AiUsagePreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -58,6 +58,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
             const result = await runZaiOAuth({
                 oauthConfig: PROVIDERS.zai.getOAuthConfig(account.credentials || {}),
                 cancellable,
+                openUri: url => Gio.AppInfo.launch_default_for_uri(url, null),
                 events: {
                     initializing: () => {
                         loginBtn.label = _('Starting login...');

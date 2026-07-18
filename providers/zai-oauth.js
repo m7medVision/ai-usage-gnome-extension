@@ -1,4 +1,3 @@
-import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Soup from 'gi://Soup?version=3.0';
 
@@ -8,7 +7,7 @@ export async function runZaiOAuth({
     events = {},
     request,
     sleep = delay,
-    openUri = uri => Gio.AppInfo.launch_default_for_uri(uri, null),
+    openUri,
     maxAttempts = 120,
 }) {
     if (isCancelled(cancellable)) return { cancelled: true };
@@ -35,6 +34,8 @@ export async function runZaiOAuth({
             throw new Error('Unexpected OAuth init response');
         validateAuthorizeUrl(authUrl, oauthConfig.provider);
 
+        if (!openUri)
+            throw new Error('OAuth browser launcher is required');
         events.waitingForBrowser?.(authUrl);
         try { openUri(authUrl); } catch (e) { events.browserFallback?.(authUrl); }
 

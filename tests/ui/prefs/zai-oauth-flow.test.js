@@ -2,7 +2,7 @@ import {
     parseTokens,
     runZaiOAuth,
     validateAuthorizeUrl,
-} from '../../../ui/prefs/zai-oauth-flow.js';
+} from '../../../providers/zai-oauth.js';
 
 function assertEqual(actual, expected, message) {
     if (actual !== expected)
