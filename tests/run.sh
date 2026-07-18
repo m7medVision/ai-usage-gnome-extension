@@ -21,5 +21,6 @@ run() {
 
 run "tests/core.test.js"            gjs -m tests/core.test.js
 run "tests/config.test.js"          env XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
+run "tests/application/fetch-service.test.js" gjs -m tests/application/fetch-service.test.js
 
 exit $failures

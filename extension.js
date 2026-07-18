@@ -15,6 +15,7 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as config from './config.js';
 import { RefreshService } from './application/refresh-service.js';
+import { FetchService } from './application/fetch-service.js';
 import { AccountRepository } from './application/account-repository.js';
 import { worstPercentUsed } from './domain/usage.js';
 import { PROVIDERS } from './providers/index.js';
@@ -37,11 +38,13 @@ const Indicator = GObject.registerClass(
             this._settings = ext.getSettings();
             this._destroyed = false;
             this._session = new Soup.Session();
+            this._fetcher = new FetchService({ session: this._session });
             this._results = {};              // keyed by account id
             this._activeAccountId = null;
             this._accounts = new AccountRepository(PROVIDERS);
             this._refresh = new RefreshService({
-                fetch: () => this._fetchAll(),
+                fetch: async () => this._applyResults(
+                    await this._fetcher.fetchAll(this._getAccounts())),
                 schedule: (delayMs, callback) => GLib.timeout_add(
                     GLib.PRIORITY_DEFAULT,
                     Math.min(Math.max(MIN_REFRESH_DELAY_MS, delayMs), 2147483647),
@@ -150,26 +153,10 @@ const Indicator = GObject.registerClass(
             updatePanelIcon(this._panelIcon, percentUsed, this._settings);
         }
 
-        /* ── Fetching ── */
-
-        async _fetchAll() {
-            const accounts = this._getAccounts();
-            log(`[ai-usage] Fetching ${accounts.length} account(s)`);
-            const results = await Promise.all(accounts.map(async ({ account, provider }) => {
-                try {
-                    const result = await provider.fetch(this._session, account.credentials);
-                    log(`[ai-usage] ${account.label}: attempted=${result.attempted} entries=${result.entries?.length || 0} errors=${result.errors?.length || 0}`);
-                    return [account.id, result];
-                } catch (e) {
-                    return [account.id, {
-                        attempted: true, entries: [],
-                        errors: [`${account.label}: ${e.message || e}`],
-                    }];
-                }
-            }));
+        _applyResults(results) {
             if (this._destroyed)
                 return;
-            for (const [accountId, result] of results)
+            for (const [accountId, result] of results.entries())
                 this._results[accountId] = result;
             this._updatePanel();
             this._renderTabs();
