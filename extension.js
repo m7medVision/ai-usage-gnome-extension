@@ -15,13 +15,11 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as config from './config.js';
-import { RefreshLoop } from './refresh-loop.js';
+import { RefreshService } from './application/refresh-service.js';
+import { AccountRepository } from './application/account-repository.js';
 import { clampPercent as clamp, pickPrimaryEntry, usageLevel, worstPercentUsed } from './domain/usage.js';
 import { currentPeakStatus } from './domain/peak.js';
 import { PROVIDERS } from './providers/index.js';
-
-const PROVIDER_REGISTRY = Object.fromEntries(
-    Object.entries(PROVIDERS).map(([id, definition]) => [id, definition.adapter]));
 
 /* Adwaita-derived palette */
 const COLOR_GREEN = '#2ec27e';
@@ -107,10 +105,11 @@ const Indicator = GObject.registerClass(
             this._session = new Soup.Session();
             this._results = {};              // keyed by account id
             this._activeAccountId = null;
-            this._refreshLoop = new RefreshLoop({
+            this._accounts = new AccountRepository(PROVIDERS);
+            this._refresh = new RefreshService({
                 fetch: () => this._fetchAll(),
                 schedule: (delayMs, callback) => GLib.timeout_add(
-                    GLib.PRIORITY_DEFAULT, Math.max(1000, delayMs), () => {
+                    GLib.PRIORITY_DEFAULT, Math.min(Math.max(1000, delayMs), 2147483647), () => {
                         callback().catch(e => logError(e));
                         return GLib.SOURCE_REMOVE;
                     }),
@@ -235,22 +234,8 @@ const Indicator = GObject.registerClass(
 
         /* Build [{account, provider}] for enabled, authenticated accounts. */
         _getAccounts() {
-            let cfg;
-            try {
-                cfg = config.load();
-                this._configError = null;
-            } catch (e) {
-                logError(e, 'AI Usage config could not be loaded');
-                this._configError = e.message || String(e);
-                return [];
-            }
-            const out = [];
-            for (const acc of cfg.accounts) {
-                if (!acc.enabled) continue;
-                const provider = PROVIDER_REGISTRY[acc.provider];
-                if (!provider) continue;
-                out.push({ account: acc, provider });
-            }
+            const out = this._accounts.loadEnabled();
+            this._configError = this._accounts.lastError;
             return out;
         }
 
@@ -405,16 +390,9 @@ const Indicator = GObject.registerClass(
             }
         }
 
-        /* Pick the entry that best represents "the" limit for an account's
-         * latest fetch result, plus a status tag for entries/edge-cases that
-         * aren't a plain percent (no data yet, not configured, errored). */
-        _pickPrimaryEntry(res) {
-            return pickPrimaryEntry(res);
-        }
-
         _addOverviewRow(account, provider) {
             const res = this._results[account.id];
-            const picked = this._pickPrimaryEntry(res);
+            const picked = pickPrimaryEntry(res);
 
             const btn = new St.Button({
                 style_class: 'ai-usage-overview-row',
@@ -1025,7 +1003,7 @@ const Indicator = GObject.registerClass(
             this._refreshBtn.reactive = false;
             this._headerTitle.set_text('AI Usage (Refreshing…)');
             try {
-                await this._refreshLoop.refresh();
+                await this._refresh.refresh();
             } finally {
                 if (!this._destroyed) {
                     this._headerTitle.set_text('AI Usage');
@@ -1036,12 +1014,12 @@ const Indicator = GObject.registerClass(
 
         _scheduleRefresh(delayMs) {
             const interval = delayMs ?? this._settings.get_int('refresh-interval') * 1000;
-            this._refreshLoop.start(interval).catch(e => logError(e));
+            this._refresh.start(interval).catch(e => logError(e));
         }
 
         destroy() {
             this._destroyed = true;
-            this._refreshLoop.stop();
+            this._refresh.stop();
             this._session.abort();
             this._stopPeakTicker();
             this._peakWidgets = null;

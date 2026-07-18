@@ -1,6 +1,8 @@
 import { pickPrimaryEntry, usageLevel, worstPercentUsed } from '../domain/usage.js';
 import { currentPeakStatus } from '../domain/peak.js';
-import { RefreshLoop } from '../refresh-loop.js';
+import { SingleFlight } from '../application/single-flight.js';
+import { Scheduler } from '../application/scheduler.js';
+import { RefreshService } from '../application/refresh-service.js';
 import { PROVIDERS, createDefaultCredentials } from '../providers/index.js';
 import { EntryKind, isPercentEntry } from '../domain/entry-kind.js';
 import { createEntry } from '../domain/usage-entry.js';
@@ -72,73 +74,177 @@ function testOvernightPeakWindowWrapsMidnight() {
     assertEqual(status.inPeak, true, 'overnight peak status');
 }
 
-async function testRefreshLoopFetchesOncePerTick() {
+async function testSingleFlightCoalescesConcurrentCalls() {
     // Arrange
     let fetches = 0;
-    let scheduledCallback = null;
-    const loop = new RefreshLoop({
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const single = new SingleFlight(async () => { fetches += 1; await blocked; });
+
+    // Act
+    const first = single.run();
+    const second = single.run();
+    assertEqual(first, second, 'concurrent runs share the in-flight promise');
+    release();
+    await first;
+
+    // Assert
+    assertEqual(fetches, 1, 'concurrent run count');
+}
+
+async function testSingleFlightRefiresOnlyWhenRequested() {
+    // Arrange
+    let fetches = 0;
+    const single = new SingleFlight(async () => { fetches += 1; });
+
+    // Act — a plain run() does not arm a refire
+    await single.run();
+    assertEqual(fetches, 1, 'single fetch with no refire');
+
+    // Arrange — one in-flight, requestRefire arms one extra
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    let attempts = 0;
+    const single2 = new SingleFlight(async () => { attempts += 1; await blocked; });
+    const pending = single2.run();
+    single2.requestRefire();
+
+    // Act
+    release();
+    await pending;
+    await Promise.resolve();
+
+    // Assert — the refire target started and finished
+    assertEqual(attempts, 2, 'requestRefire arms exactly one extra run');
+}
+
+async function testSingleFlightFailureDoesNotBlockNextRun() {
+    // Arrange
+    const single = new SingleFlight(async () => { throw new Error('boom'); });
+
+    // Act + assert — failed run resolves (rejection absorbed) so a second run works
+    await single.run();
+    let threw = false;
+    try { await single.run(); } catch (_) { threw = true; }
+    if (threw)
+        throw new Error('a failed run must not surface rejection to the next caller');
+}
+
+async function testSingleFlightStopsRefiringAfterCancel() {
+    // Arrange
+    let attempts = 0;
+    let release;
+    const blocked = new Promise(resolve => { release = resolve; });
+    const single = new SingleFlight(async () => { attempts += 1; });
+
+    // Act — arm a refire, then cancel before settle
+    single.run();
+    single.requestRefire();
+    single.cancel();
+    release();
+    await Promise.resolve();
+
+    // Assert
+    assertEqual(attempts, 1, 'cancel drops the armed refire');
+}
+
+async function testSchedulerReschedulesAfterFailingCallback() {
+    // Arrange
+    let fired = 0;
+    let timerCallback = null;
+    let usedDelayMs = null;
+    const scheduler = new Scheduler({
+        schedule: (delayMs, callback) => {
+            usedDelayMs = delayMs;
+            timerCallback = callback;
+            return 1;
+        },
+        cancel: () => {},
+    });
+    scheduler.start(30_000, async () => {
+        fired += 1;
+        if (fired === 1)
+            throw new Error('boom');
+    });
+
+    // Act
+    await timerCallback();
+    await timerCallback();
+
+    // Assert
+    assertEqual(usedDelayMs, 30_000, 'scheduler reuses the same delay');
+    assertEqual(fired, 2, 'scheduler keeps ticking after a failure');
+}
+
+async function testSchedulerStopInvalidatesStagedCallback() {
+    // Arrange
+    let fired = 0;
+    let timerCallback = null;
+    let cancelled = 0;
+    const scheduler = new Scheduler({
+        schedule: (_delayMs, callback) => {
+            timerCallback = callback;
+            return 7;
+        },
+        cancel: id => { cancelled = id; },
+    });
+    scheduler.start(30_000, async () => { fired += 1; });
+
+    // Act
+    scheduler.stop();
+    await timerCallback();
+
+    // Assert
+    assertEqual(cancelled, 7, 'stop cancels the staged timer');
+    assertEqual(fired, 0, 'staged callback does not run after stop');
+}
+
+async function testRefreshServiceStartRunsInitialAndScheduledFetches() {
+    // Arrange
+    let fetches = 0;
+    let timerCallback = null;
+    const service = new RefreshService({
         fetch: async () => { fetches += 1; },
         schedule: (_delayMs, callback) => {
-            scheduledCallback = callback;
+            timerCallback = callback;
             return 1;
         },
         cancel: () => {},
     });
 
     // Act
-    await loop.start(30_000);
-    await scheduledCallback();
+    await service.start(30_000);
+    await timerCallback();
+    service.stop();
 
     // Assert
-    assertEqual(fetches, 2, 'initial and scheduled fetch count');
+    assertEqual(fetches, 2, 'initial fetch + first scheduled tick');
 }
 
-async function testConcurrentRefreshesUseOneFetch() {
+async function testRefreshServiceStopPreventsFurtherFetches() {
     // Arrange
     let fetches = 0;
-    let release;
-    const blocked = new Promise(resolve => { release = resolve; });
-    const loop = new RefreshLoop({
-        fetch: async () => { fetches += 1; await blocked; },
-        schedule: () => 1,
-        cancel: () => {},
-    });
-
-    // Act
-    const first = loop.start(30_000);
-    const second = loop.refresh();
-    release();
-    await Promise.all([first, second]);
-
-    // Assert
-    assertEqual(fetches, 1, 'concurrent refresh count');
-}
-
-async function testRefreshLoopReschedulesAfterFailure() {
-    // Arrange
-    let shouldFail = false;
-    let scheduledCallback = null;
-    let schedules = 0;
-    const loop = new RefreshLoop({
-        fetch: async () => {
-            if (shouldFail)
-                throw new Error('temporary failure');
-        },
+    let timerCallback = null;
+    const service = new RefreshService({
+        fetch: async () => { fetches += 1; },
         schedule: (_delayMs, callback) => {
-            schedules += 1;
-            scheduledCallback = callback;
-            return schedules;
+            timerCallback = callback;
+            return 1;
         },
         cancel: () => {},
     });
-    await loop.start(30_000);
+    await service.start(30_000);
 
     // Act
-    shouldFail = true;
-    try { await scheduledCallback(); } catch (_) {}
+    service.stop();
+    if (timerCallback)
+        await timerCallback();
+    await service.refresh();
 
     // Assert
-    assertEqual(schedules, 2, 'timer count after a failed refresh');
+    // The stopped service still runs one manual refresh (SingleFlight allows it),
+    // but the staged scheduled callback must NOT fire — cancelled by stop().
+    assertEqual(fetches, 2, 'no further scheduled fetch after stop; manual refresh allowed');
 }
 
 function testClaudeParserKeepsUsageWithInvalidReset() {
@@ -174,9 +280,14 @@ testPanelRiskAlwaysUsesConsumedQuota();
 testOverviewPrefersFiveHourLimit();
 testEmptyPeakWindowsAreStable();
 testOvernightPeakWindowWrapsMidnight();
-await testRefreshLoopFetchesOncePerTick();
-await testConcurrentRefreshesUseOneFetch();
-await testRefreshLoopReschedulesAfterFailure();
+await testSingleFlightCoalescesConcurrentCalls();
+await testSingleFlightRefiresOnlyWhenRequested();
+await testSingleFlightFailureDoesNotBlockNextRun();
+await testSingleFlightStopsRefiringAfterCancel();
+await testSchedulerReschedulesAfterFailingCallback();
+await testSchedulerStopInvalidatesStagedCallback();
+await testRefreshServiceStartRunsInitialAndScheduledFetches();
+await testRefreshServiceStopPreventsFurtherFetches();
 testProviderRegistryOwnsFreshCredentialDefaults();
 testClaudeParserKeepsUsageWithInvalidReset();
 
