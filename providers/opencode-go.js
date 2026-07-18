@@ -41,9 +41,13 @@ function fmtCost(rawCost) {
 
 export const opencodeGoProvider = {
     id: 'opencode-go',
-    label: 'OpenCode Go',
+    name: 'OpenCode Go',
     logoFile: 'opencode-logo.svg',
     fullColorLogo: true,
+
+    defaultCredentials() {
+        return { workspaceId: '', authCookie: '', serverId: '' };
+    },
 
     async fetch(session, credentials) {
         const workspaceId = credentials.workspaceId;

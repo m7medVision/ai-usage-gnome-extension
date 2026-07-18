@@ -8,6 +8,7 @@ import { EntryKind, isPercentEntry } from '../domain/entry-kind.js';
 import { createEntry } from '../domain/usage-entry.js';
 import { createResult, notAttempted } from '../domain/usage-result.js';
 import { createAccount, isAccountEnabled } from '../domain/account.js';
+import { parseResponseHeaders } from '../providers/claude-code.js';
 
 function assertEqual(actual, expected, message) {
     if (actual !== expected)
@@ -255,7 +256,7 @@ function testClaudeParserKeepsUsageWithInvalidReset() {
     };
 
     // Act
-    const result = PROVIDERS['claude-code'].adapter._parseHeaders(headers);
+    const result = parseResponseHeaders(headers);
 
     // Assert
     assertTrue(result.entries.length === 1 && result.entries[0].resetTimeIso === null,
@@ -276,6 +277,29 @@ function testProviderRegistryOwnsFreshCredentialDefaults() {
     assertEqual(second.apiKey, '', 'provider defaults must not share mutable state');
 }
 
+function testEveryProviderAdapterOwnsDefaultCredentials() {
+    // Arrange — the 5 supported providers
+    const ids = Object.keys(PROVIDERS);
+
+    // Act + assert
+    assertEqual(ids.length, 5, 'provider count');
+    for (const id of ids) {
+        const first = createDefaultCredentials(id);
+        const second = createDefaultCredentials(id);
+        if (!first || typeof first !== 'object')
+            throw new Error(`${id}: defaultCredentials must return an object`);
+        // Mutate one — must not bleed into the next call ( Stanton fresh state per call)
+        for (const key of Object.keys(first))
+            first[key] = '__mutated__';
+        const fresh = createDefaultCredentials(id);
+        for (const key of Object.keys(fresh))
+            if (fresh[key] === '__mutated__')
+                throw new Error(`${id}: defaultCredentials reused state for ${key}`);
+        if (!second || first === second)
+            throw new Error(`${id}: defaultCredentials returned same instance`);
+    }
+}
+
 testPanelRiskAlwaysUsesConsumedQuota();
 testOverviewPrefersFiveHourLimit();
 testEmptyPeakWindowsAreStable();
@@ -289,6 +313,7 @@ await testSchedulerStopInvalidatesStagedCallback();
 await testRefreshServiceStartRunsInitialAndScheduledFetches();
 await testRefreshServiceStopPreventsFurtherFetches();
 testProviderRegistryOwnsFreshCredentialDefaults();
+testEveryProviderAdapterOwnsDefaultCredentials();
 testClaudeParserKeepsUsageWithInvalidReset();
 
 function testEntryKindIsPercentSelectorsPercentEntriesOnly() {

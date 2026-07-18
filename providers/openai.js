@@ -29,8 +29,12 @@ function getAuthHeaders(credentials) {
 
 export const openaiProvider = {
     id: 'openai',
-    label: 'OpenAI',
+    name: 'OpenAI (ChatGPT Plus/Pro)',
     logoFile: 'codex-symbolic.svg',
+
+    defaultCredentials() {
+        return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0 };
+    },
 
     async fetch(session, credentials) {
         const headers = getAuthHeaders(credentials);

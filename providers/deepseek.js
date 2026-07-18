@@ -36,8 +36,12 @@ function normalizeBalance(val) {
 
 export const deepseekProvider = {
     id: 'deepseek',
-    label: 'DeepSeek',
+    name: 'DeepSeek',
     logoFile: 'deepseek-symbolic.svg',
+
+    defaultCredentials() {
+        return { apiKey: '' };
+    },
 
     async fetch(session, credentials) {
         const headers = getAuthHeaders(credentials);

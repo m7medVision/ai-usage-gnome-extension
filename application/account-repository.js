@@ -31,7 +31,7 @@ export class AccountRepository {
         for (const acc of cfg.accounts) {
             if (!isAccountEnabled(acc))
                 continue;
-            const provider = this.#registry[acc.provider]?.adapter;
+            const provider = this.#registry[acc.provider];
             if (!provider)
                 continue;
             out.push({ account: acc, provider });

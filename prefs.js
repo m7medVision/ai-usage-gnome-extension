@@ -518,7 +518,7 @@ export default class AiUsagePreferences extends ExtensionPreferences {
 
     async _startZaiOAuth(acc, statusRow, loginBtn, logoutBtn) {
         const c = acc.credentials || {};
-        const oauthConfig = PROVIDERS.zai.adapter.getOAuthConfig(c);
+        const oauthConfig = PROVIDERS.zai.getOAuthConfig(c);
 
         loginBtn.sensitive = false;
         loginBtn.label = _('Starting login...');

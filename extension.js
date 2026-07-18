@@ -283,7 +283,7 @@ const Indicator = GObject.registerClass(
                     if (logo) inner.add_child(logo);
                 }
                 inner.add_child(new St.Label({
-                    text: account.label || provider.label,
+                    text: account.label || provider.name,
                     y_align: Clutter.ActorAlign.CENTER,
                 }));
                 btn.set_child(inner);
@@ -408,7 +408,7 @@ const Indicator = GObject.registerClass(
                 if (logo) labelBox.add_child(logo);
             }
             labelBox.add_child(new St.Label({
-                text: account.label || provider.label,
+                text: account.label || provider.name,
                 style_class: 'ai-usage-overview-label',
                 y_align: Clutter.ActorAlign.CENTER,
             }));

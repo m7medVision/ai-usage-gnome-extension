@@ -62,9 +62,13 @@ function getAuthHeaders(credentials) {
 
 export const zaiProvider = {
     id: 'zai',
-    label: 'Z.AI',
+    name: 'Z.AI (Zhipu)',
     logoFile: 'zai-logo.svg',
     fullColorLogo: true,
+
+    defaultCredentials() {
+        return { apiKey: '', oauthToken: '', oauthRefresh: '', oauthExpiry: 0, endpoint: 'intl' };
+    },
 
     getOAuthConfig(credentials) {
         const endpoint = credentials.endpoint || 'intl';
