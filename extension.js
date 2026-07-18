@@ -25,8 +25,8 @@ import { COLOR_MUTED } from './ui/format.js';
 import { colorForPercent } from './ui/usage-color.js';
 import { addEntry } from './ui/entry-view/index.js';
 import { addProgressBar } from './ui/entry-view/shared.js';
+import { renderTabs, providerLogo, OVERVIEW_ID } from './ui/tabs.js';
 
-const OVERVIEW_ID = '__overview__';
 const MIN_REFRESH_DELAY_MS = 1000;
 
 const Indicator = GObject.registerClass(
@@ -189,80 +189,18 @@ const Indicator = GObject.registerClass(
         /* ── Tabs ── */
 
         _renderTabs() {
-            this._tabsContainer.destroy_all_children();
-            const accounts = this._getAccounts();
-            const showLogos = this._settings.get_boolean('show-logos');
-            const showOverview = accounts.length > 1;
-
-            const validIds = new Set(accounts.map(a => a.account.id));
-            if (showOverview) validIds.add(OVERVIEW_ID);
-            if (!validIds.has(this._activeAccountId))
-                this._activeAccountId = showOverview ? OVERVIEW_ID : (accounts[0]?.account.id ?? null);
-
-            if (showOverview) {
-                const btn = new St.Button({
-                    style_class: 'ai-usage-tab',
-                    can_focus: true,
-                });
-                btn.set_child(new St.Label({
-                    text: 'Overview',
-                    y_align: Clutter.ActorAlign.CENTER,
-                }));
-                if (this._activeAccountId === OVERVIEW_ID)
-                    btn.add_style_class_name('ai-usage-tab-active');
-                btn.connect('clicked', () => {
-                    this._activeAccountId = OVERVIEW_ID;
+            this._activeAccountId = renderTabs({
+                container: this._tabsContainer,
+                accounts: this._getAccounts(),
+                activeAccountId: this._activeAccountId,
+                showLogos: this._settings.get_boolean('show-logos'),
+                logoProvider: p => providerLogo(p, this._ext.path),
+                onSelect: id => {
+                    this._activeAccountId = id;
                     this._renderTabs();
                     this._renderContent();
-                    return Clutter.EVENT_PROPAGATE;
-                });
-                this._tabsContainer.add_child(btn);
-            }
-
-            for (const { account, provider } of accounts) {
-                const btn = new St.Button({
-                    style_class: 'ai-usage-tab',
-                    can_focus: true,
-                });
-                const inner = new St.BoxLayout({ y_align: Clutter.ActorAlign.CENTER });
-                if (showLogos) {
-                    const logo = this._providerLogo(provider);
-                    if (logo) inner.add_child(logo);
-                }
-                inner.add_child(new St.Label({
-                    text: account.label || provider.name,
-                    y_align: Clutter.ActorAlign.CENTER,
-                }));
-                btn.set_child(inner);
-                if (account.id === this._activeAccountId)
-                    btn.add_style_class_name('ai-usage-tab-active');
-                btn.connect('clicked', () => {
-                    this._activeAccountId = account.id;
-                    this._renderTabs();
-                    this._renderContent();
-                    return Clutter.EVENT_PROPAGATE;
-                });
-                this._tabsContainer.add_child(btn);
-            }
-        }
-
-        _providerLogo(provider) {
-            if (!provider.logoFile) return null;
-            const path = GLib.build_filenamev([
-                this._ext.path, 'media', 'logos', provider.logoFile,
-            ]);
-            if (!GLib.file_test(path, GLib.FileTest.EXISTS)) return null;
-            try {
-                const cls = provider.fullColorLogo
-                    ? 'ai-usage-tab-icon-color'
-                    : 'ai-usage-tab-icon';
-                return new St.Icon({
-                    gicon: Gio.Icon.new_for_string(path),
-                    style_class: cls,
-                });
-            } catch (e) {
-                return null;
-            }
+                },
+            });
         }
 
         /* ── Content ── */
