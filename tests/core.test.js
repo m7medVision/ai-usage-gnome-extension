@@ -9,6 +9,7 @@ import { createEntry } from '../domain/usage-entry.js';
 import { createResult, notAttempted } from '../domain/usage-result.js';
 import { createAccount, isAccountEnabled } from '../domain/account.js';
 import { parseResponseHeaders } from '../providers/claude-code.js';
+import { overviewRightText } from '../ui/overview-text.js';
 
 function assertEqual(actual, expected, message) {
     if (actual !== expected)
@@ -348,3 +349,31 @@ function testValueObjectsCarryShapeConstraints() {
 testEntryKindIsPercentSelectorsPercentEntriesOnly();
 testEntryFactoryRejectsUnknownKind();
 testValueObjectsCarryShapeConstraints();
+
+function testOverviewRightTextCoversEveryState() {
+    // Arrange
+    const percent5h = { state: 'percent', entry: { label: '5h:', percentUsed: 17, percentRemaining: 83 } };
+    const percentNoLabel = { state: 'percent', entry: { percentUsed: 50 } };
+    const other = { state: 'other', entry: { value: '$5.00' } };
+    const otherFallback = { state: 'other', entry: { label: 'Balance:' } };
+
+    // Act + assert — used mode (default)
+    assertEqual(overviewRightText(percent5h, 'used'), '5h · 17% used',
+        'overview right text for percent in used mode');
+    assertEqual(overviewRightText(percentNoLabel, 'used'), '50% used',
+        'overview right text with no label');
+    assertEqual(overviewRightText(percent5h, 'remaining'), '5h · 83% left',
+        'overview right text in remaining mode');
+    assertEqual(overviewRightText(other, 'used'), '$5.00', 'overview other value');
+    assertEqual(overviewRightText(otherFallback, 'used'), 'Balance:', 'overview other fallback to label');
+    assertEqual(overviewRightText({ state: 'not-configured' }, 'used'), 'Not configured',
+        'overview not-configured state');
+    assertEqual(overviewRightText({ state: 'no-data' }, 'used'), 'No data yet',
+        'overview no-data state');
+    assertEqual(overviewRightText({ state: 'empty' }, 'used'), 'No usage data',
+        'overview empty state');
+    assertEqual(overviewRightText({ state: 'error', message: 'upstream is down' }, 'used'), 'Error',
+        'overview error state');
+}
+
+testOverviewRightTextCoversEveryState();

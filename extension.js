@@ -19,13 +19,13 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as config from './config.js';
 import { RefreshService } from './application/refresh-service.js';
 import { AccountRepository } from './application/account-repository.js';
-import { clampPercent as clamp, pickPrimaryEntry, worstPercentUsed } from './domain/usage.js';
+import { worstPercentUsed } from './domain/usage.js';
 import { PROVIDERS } from './providers/index.js';
 import { COLOR_MUTED } from './ui/format.js';
 import { colorForPercent } from './ui/usage-color.js';
 import { addEntry } from './ui/entry-view/index.js';
-import { addProgressBar } from './ui/entry-view/shared.js';
 import { renderTabs, providerLogo, OVERVIEW_ID } from './ui/tabs.js';
+import { renderOverview } from './ui/overview.js';
 
 const MIN_REFRESH_DELAY_MS = 1000;
 
@@ -220,7 +220,7 @@ const Indicator = GObject.registerClass(
             }
 
             if (this._activeAccountId === OVERVIEW_ID) {
-                this._renderOverview(accounts, ctx);
+                this._renderOverview(ctx);
                 return;
             }
 
@@ -262,93 +262,25 @@ const Indicator = GObject.registerClass(
             }
         }
 
-        /* One compact row per account, showing its primary limit (the "5h"
-         * window when present, else the first percent entry, else the first
-         * entry of any kind) — so every provider's headline number is
-         * visible without switching tabs. Clicking a row jumps to that
-         * account's own tab for full detail. */
-        _renderOverview(accounts, ctx) {
-            let first = true;
-            for (const { account, provider } of accounts) {
-                if (!first) this._addSeparator(this._contentBox);
-                first = false;
-                this._addOverviewRow(account, provider, ctx);
-            }
-        }
-
-        _addOverviewRow(account, provider, ctx) {
-            const res = this._results[account.id];
-            const picked = pickPrimaryEntry(res);
-
-            const btn = new St.Button({
-                style_class: 'ai-usage-overview-row',
-                can_focus: true,
-                x_expand: true,
+        /* One compact row per account, showing its primary limit. The
+         * strategy table (5h window > first percent > first entry) and the
+         * right-text formatting live in ui/overview.js so each piece can be
+         * unit-tested without GSettings or widget actors. */
+        _renderOverview(ctx) {
+            renderOverview({
+                parent: this._contentBox,
+                accounts: this._getAccounts(),
+                results: this._results,
+                showLogos: this._settings.get_boolean('show-logos'),
+                displayMode: this._settings.get_string('display-mode'),
+                logoProvider: p => providerLogo(p, this._ext.path),
+                colorForPercent: ctx.colorForPercent,
+                onSelectAccount: id => {
+                    this._activeAccountId = id;
+                    this._renderTabs();
+                    this._renderContent();
+                },
             });
-            const box = new St.BoxLayout({ vertical: true, x_expand: true });
-
-            const top = new St.BoxLayout({ x_expand: true });
-            const labelBox = new St.BoxLayout({ x_expand: true, y_align: Clutter.ActorAlign.CENTER });
-            if (this._settings.get_boolean('show-logos')) {
-                const logo = this._providerLogo(provider);
-                if (logo) labelBox.add_child(logo);
-            }
-            labelBox.add_child(new St.Label({
-                text: account.label || provider.name,
-                style_class: 'ai-usage-overview-label',
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            top.add_child(labelBox);
-
-            const rightText = this._overviewRightText(picked);
-            top.add_child(new St.Label({
-                text: rightText,
-                style_class: 'ai-usage-usage-subtitle ai-usage-usage-subtitle-right',
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            box.add_child(top);
-
-            if (picked.state === 'percent') {
-                const pctUsed = clamp(picked.entry.percentUsed ?? (picked.entry.percentRemaining != null
-                    ? 100 - picked.entry.percentRemaining : 0));
-                addProgressBar(box, pctUsed, ctx.colorForPercent(pctUsed));
-            } else if (picked.state === 'error') {
-                box.add_child(new St.Label({
-                    text: `Error: ${picked.message}`,
-                    style: 'color: #ff7800; font-size: 0.8em; margin-top: 2px;',
-                }));
-            }
-
-            btn.set_child(box);
-            btn.connect('clicked', () => {
-                this._activeAccountId = account.id;
-                this._renderTabs();
-                this._renderContent();
-                return Clutter.EVENT_PROPAGATE;
-            });
-            this._contentBox.add_child(btn);
-        }
-
-        _overviewRightText(picked) {
-            if (picked.state === 'percent') {
-                const e = picked.entry;
-                const pctUsed = clamp(e.percentUsed ?? (e.percentRemaining != null ? 100 - e.percentRemaining : 0));
-                const pctRemaining = clamp(100 - pctUsed);
-                const label = (e.label || '').replace(/:$/, '');
-                const pctText = this._settings.get_string('display-mode') === 'remaining'
-                    ? `${Math.round(pctRemaining)}% left`
-                    : `${Math.round(pctUsed)}% used`;
-                return label ? `${label} · ${pctText}` : pctText;
-            }
-            if (picked.state === 'other') {
-                const e = picked.entry;
-                return e.value != null ? String(e.value) : (e.label || '—');
-            }
-            if (picked.state === 'not-configured') return 'Not configured';
-            if (picked.state === 'no-data') return 'No data yet';
-            if (picked.state === 'empty') return 'No usage data';
-            if (picked.state === 'error') return 'Error';
-            return '—';
         }
 
         _addHint(parent, text) {
