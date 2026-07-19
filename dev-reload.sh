@@ -3,7 +3,7 @@
 # Usage: ./dev-reload.sh
 set -euo pipefail
 
-UUID="ai-usage-monitor@ahati"
+UUID="ai-usage-monitor@m7medvision"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
