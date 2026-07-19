@@ -25,7 +25,7 @@ cd ai-usage-extension
 ./install.sh
 
 # Restart GNOME Shell (X11: Alt+F2 → r → Enter; Wayland: log out and back in)
-gnome-extensions enable ai-usage-monitor@ahati
+gnome-extensions enable ai-usage-monitor@m7medvision
 ```
 
 ## Usage

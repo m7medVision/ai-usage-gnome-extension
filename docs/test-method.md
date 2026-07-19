@@ -25,7 +25,7 @@ gnome-shell --help 2>&1 | grep devkit
 dbus-run-session gnome-shell --devkit --wayland
 
 # 3. In another terminal, enable the extension inside the nested session
-gnome-extensions enable ai-usage-monitor@ahati
+gnome-extensions enable ai-usage-monitor@m7medvision
 
 # 4. Test — click the panel indicator, check menu, verify data
 
@@ -34,7 +34,7 @@ gnome-extensions enable ai-usage-monitor@ahati
 # 6. Re-install and restart nested shell
 ./install.sh
 # Close nested shell window and relaunch dbus-run-session gnome-shell --devkit --wayland
-gnome-extensions enable ai-usage-monitor@ahati
+gnome-extensions enable ai-usage-monitor@m7medvision
 
 # 7. Repeat from step 4
 ```
@@ -79,7 +79,7 @@ log(`[ai-usage] ${provider.id}: result=${JSON.stringify(result)}`);
 ### 4c. Check extension state via DBus
 
 ```bash
-UUID="ai-usage-monitor@ahati"
+UUID="ai-usage-monitor@m7medvision"
 
 # Get full extension info (state, enabled, error)
 busctl --user call org.gnome.Shell /org/gnome/Shell \
@@ -125,7 +125,7 @@ gsettings set "$SCHEMA" refresh-interval 60
 gdbus call --session --dest org.gnome.Shell.Extensions \
     --object-path /org/gnome/Shell/Extensions \
     --method org.gnome.Shell.Extensions.OpenExtensionPrefs \
-    "ai-usage-monitor@ahati" "" '{}'
+    "ai-usage-monitor@m7medvision" "" '{}'
 
 # Force refresh (indirectly by triggering preferences)
 # The extension has a "Refresh" button in the menu
@@ -174,7 +174,7 @@ XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 ## 7. File layout for debugging
 
 ```
-~/.local/share/gnome-shell/extensions/ai-usage-monitor@ahati/
+~/.local/share/gnome-shell/extensions/ai-usage-monitor@m7medvision/
 ├── extension.js          ← Shell entry shim
 ├── prefs.js              ← Preferences entry shim
 ├── config.js             ← Account persistence (atomic 0600 write)

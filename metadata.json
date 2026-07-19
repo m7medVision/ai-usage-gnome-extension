@@ -1,7 +1,7 @@
 {
   "name": "AI Usage Monitor",
   "description": "Monitor AI service usage limits and balances. Supports Z.AI, OpenCode Go, OpenAI, DeepSeek, and Claude Code.",
-  "uuid": "ai-usage-monitor@ahati",
+  "uuid": "ai-usage-monitor@m7medvision",
   "shell-version": [
     "45",
     "46",
