@@ -6,14 +6,10 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import Gio from 'gi://Gio';
 import { USER_AGENT } from './constants.js';
+import { clampPercent } from '../domain/usage.js';
 
 const OPENAI_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
-
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
-}
 
 function getAuthHeaders(credentials) {
     const oauthToken = credentials.oauthToken;
@@ -30,11 +26,11 @@ function getAuthHeaders(credentials) {
 
 export const openaiProvider = {
     id: 'openai',
-    label: 'OpenAI',
+    name: 'OpenAI (ChatGPT Plus/Pro)',
     logoFile: 'codex-symbolic.svg',
 
-    needsAuth(credentials) {
-        return !!(credentials.oauthToken);
+    defaultCredentials() {
+        return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0 };
     },
 
     async fetch(session, credentials) {

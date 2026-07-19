@@ -39,29 +39,9 @@ gnome-extensions enable ai-usage-monitor@ahati
 # 7. Repeat from step 4
 ```
 
-## 3. One-liner reload script
+## 3. Reload script
 
-Save as `dev-reload.sh`:
-
-```bash
-#!/bin/bash
-# Reload extension in nested shell — run from project root
-UUID="ai-usage-monitor@ahati"
-EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
-
-set -e
-rm -rf "${EXT_DIR}"
-mkdir -p "${EXT_DIR}/schemas" "${EXT_DIR}/providers"
-cp extension.js prefs.js stylesheet.css metadata.json "${EXT_DIR}/"
-cp providers/*.js "${EXT_DIR}/providers/"
-cp schemas/*.xml "${EXT_DIR}/schemas/"
-cp -r media "${EXT_DIR}/" 2>/dev/null || true
-glib-compile-schemas "${EXT_DIR}/schemas/"
-chmod 664 "${EXT_DIR}/"*.{js,css,json} "${EXT_DIR}/providers/"*.js "${EXT_DIR}/schemas/"*
-
-echo "Installed. Restart nested shell or run:"
-echo "  gnome-extensions enable ${UUID}"
-```
+Use the repository's `dev-reload.sh`; its copy list is kept in sync with runtime modules.
 
 Usage:
 
@@ -122,19 +102,9 @@ busctl --user call org.gnome.Shell /org/gnome/Shell \
     org.gnome.Shell.Extensions GetExtensionErrors s "$UUID"
 ```
 
-### 4d. Test API calls directly
+### 4d. Inspect account configuration
 
-```bash
-# Test Z.AI API
-API_KEY=$(gsettings get org.gnome.shell.extensions.ai-usage zai-api-key | tr -d "'")
-curl -s -H "Authorization: Bearer $API_KEY" \
-    "https://api.z.ai/api/monitor/usage/quota/limit" | python3 -m json.tool
-
-# Test DeepSeek API
-DS_KEY=$(gsettings get org.gnome.shell.extensions.ai-usage deepseek-api-key | tr -d "'")
-curl -s -H "Authorization: Bearer $DS_KEY" \
-    "https://api.deepseek.com/user/balance" | python3 -m json.tool
-```
+Provider credentials are stored in `~/.local/share/.ai-usage-ext/config.json`, not GSettings. Avoid printing or pasting this file into logs because it contains secrets.
 
 ### 4e. Check GSettings
 
@@ -143,12 +113,6 @@ SCHEMA="org.gnome.shell.extensions.ai-usage"
 
 # List all keys and values
 gsettings list-recursively "$SCHEMA"
-
-# Check specific keys
-gsettings get "$SCHEMA" enabled-providers
-gsettings get "$SCHEMA" zai-api-key
-gsettings get "$SCHEMA" deepseek-api-key
-gsettings get "$SCHEMA" opencode-go-workspace-id
 
 # Set a key
 gsettings set "$SCHEMA" refresh-interval 60
@@ -183,40 +147,15 @@ for key in ['name', 'state', 'enabled', 'error']:
 
 ## 5. Provider debugging
 
-### Check which providers are enabled
-
-```bash
-gsettings get org.gnome.shell.extensions.ai-usage enabled-providers
-```
-
 ### Check if a provider has auth configured
 
-```bash
-SCHEMA="org.gnome.shell.extensions.ai-usage"
-for key in zai-api-key opencode-go-workspace-id openai-oauth-token deepseek-api-key; do
-    VAL=$(gsettings get "$SCHEMA" "$key")
-    if [ "$VAL" = "''" ] || [ -z "$VAL" ]; then
-        echo "$key: NOT CONFIGURED"
-    else
-        echo "$key: configured (${VAL:0:16}...)"
-    fi
-done
-```
+Open Preferences and inspect the account's credential fields. Do not print credential values to the terminal or journal.
 
-### Test a provider in isolation
+### Run isolated checks
 
 ```bash
-gjs -m -c "
-import { zaiProvider } from './providers/zai.js';
-const Gio = imports.gi.Gio;
-const Soup = imports.gi.Soup;
-const schema = Gio.SettingsSchemaSource.get_default()
-    .lookup('org.gnome.shell.extensions.ai-usage', true);
-const settings = new Gio.Settings({settings_schema: schema});
-const session = new Soup.Session();
-const result = await zaiProvider.fetch(session, settings);
-print(JSON.stringify(result, null, 2));
-"
+gjs -m tests/core.test.js
+XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 ```
 
 ## 6. Common issues
@@ -227,7 +166,7 @@ print(JSON.stringify(result, null, 2));
 | Extension not in `gnome-extensions list` | Shell hasn't discovered it | Restart nested shell; on main session log out/in |
 | `No property X on StWidget` | Using invalid St constructor options | Check GNOME Shell St API docs; avoid `style`, `spacing`, percentage widths |
 | `Tried to construct object without a GType` | Subclassing GObject without registration | Don't subclass GObject classes; use composition instead |
-| Provider returns `attempted: false` | Auth not configured | Check `needsAuth()` conditions; verify gsettings keys |
+| Provider returns `attempted: false` | Auth not configured | Verify the account credentials in Preferences |
 | Extension loads but menu empty | `_rebuildMenu` logic bug or fetch silently failed | Add `log()` calls; check journal for `[ai-usage]` prefix |
 | OpenCode Go returns 302/auth page | Cookie expired | Refresh cookie from browser DevTools → Cookies |
 | Panel icon not visible | Widget sizing/visibility issue | Use simple `St.Label` instead of `St.Widget` bars |
@@ -236,15 +175,44 @@ print(JSON.stringify(result, null, 2));
 
 ```
 ~/.local/share/gnome-shell/extensions/ai-usage-monitor@ahati/
-├── extension.js          ← Main extension logic
-├── prefs.js              ← Preferences dialog
+├── extension.js          ← Shell entry shim
+├── prefs.js              ← Preferences entry shim
+├── config.js             ← Account persistence (atomic 0600 write)
+├── local-detect.js       ← Auto-detect CLI credentials (~/.claude, opencode)
+├── domain/               ← Pure rules (no GNOME imports)
+│   ├── usage.js          ← usageLevel, worstPercentUsed, pickPrimaryEntry
+│   ├── peak.js           ← currentPeakStatus
+│   ├── entry-kind.js     ← EntryKind discriminated union
+│   ├── account.js        ← Account value object
+│   ├── usage-entry.js    ← UsageEntry value object
+│   └── usage-result.js   ← UsageResult value object
+├── application/          ← Use-case orchestration
+│   ├── refresh-service.js
+│   ├── fetch-service.js
+│   ├── single-flight.js
+│   ├── scheduler.js
+│   └── account-repository.js
+├── ui/                   ← Presentation
+│   ├── extension-entry.js, indicator.js
+│   ├── tabs.js, overview.js, content.js, menu.js
+│   ├── panel-icon.js, peak-ticker.js, config-monitor.js
+│   ├── format.js         ← palette + formatters
+│   ├── usage-color.js    ← severity → color
+│   ├── prefs/            ← Adwaita pages, account CRUD, OAuth, credential Strategies
+│   └── entry-view/       ← per-kind Strategy renderers
+│       ├── index.js      ← dispatcher
+│       ├── percent-view.js
+│       ├── bar-chart-view.js
+│       ├── stacked-bar-chart-view.js
+│       ├── cost-distribution-view.js
+│       ├── peak-status-view.js
+│       └── value-box-view.js
+├── providers/            ← Provider Strategy adapters
+│   ├── index.js          ← Provider registry
+│   ├── zai.js, opencode-go.js, openai.js, deepseek.js, claude-code.js
+│   ├── colors.js, constants.js
 ├── stylesheet.css        ← Panel/menu styling
 ├── metadata.json         ← UUID, version, shell-version
-├── providers/
-│   ├── zai.js            ← Z.AI API (api.z.ai)
-│   ├── opencode-go.js    ← OpenCode Go _server API
-│   ├── openai.js         ← ChatGPT usage API
-│   └── deepseek.js       ← DeepSeek balance API
 └── schemas/
     ├── org.gnome.shell.extensions.ai-usage.gschema.xml
     └── gschemas.compiled

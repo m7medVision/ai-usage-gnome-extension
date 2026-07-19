@@ -34,6 +34,7 @@ import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
 import { USER_AGENT } from './constants.js';
 import { detectClaudeCode } from '../local-detect.js';
+import { clampPercent } from '../domain/usage.js';
 
 const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -48,16 +49,53 @@ const WINDOW_LABELS = {
     '7d-sonnet': ['Claude Code Weekly (Sonnet)', 'Weekly Sonnet:'],
 };
 
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
+/* Parse the flat anthropic-ratelimit-unified-<window>-{utilization,reset}
+ * headers into percent entries. Generic over whatever <window> keys are
+ * present so per-model weekly windows (opus/sonnet) show up on plans that
+ * have them, without failing on plans that don't. Exported (named) so the
+ * contract test imports it directly rather than reaching into the adapter
+ * object's underscore-prefixed method. */
+export function parseResponseHeaders(headers) {
+    const entries = [];
+    const errors = [];
+
+    const windowKeys = new Set();
+    for (const name of Object.keys(headers)) {
+        const m = /^anthropic-ratelimit-unified-(.+)-utilization$/.exec(name);
+        if (m) windowKeys.add(m[1]);
+    }
+
+    for (const key of windowKeys) {
+        const util = parseFloat(headers[`anthropic-ratelimit-unified-${key}-utilization`]);
+        if (Number.isNaN(util)) continue;
+        const resetRaw = headers[`anthropic-ratelimit-unified-${key}-reset`];
+        const resetSeconds = Number.parseInt(resetRaw, 10);
+        const resetTimeIso = Number.isFinite(resetSeconds)
+            ? new Date(resetSeconds * 1000).toISOString()
+            : null;
+
+        const [name, label] = WINDOW_LABELS[key] || [`Claude Code ${key}`, `${key}:`];
+        const usedPct = util <= 1 ? util * 100 : util;
+        entries.push({
+            kind: 'percent', name, group: 'Claude Code', label,
+            percentUsed: usedPct,
+            percentRemaining: clampPercent(100 - usedPct),
+            resetTimeIso,
+        });
+    }
+
+    if (entries.length === 0)
+        errors.push('Claude Code: no rate-limit headers in response');
+
+    return { attempted: true, entries, errors };
 }
 
 export const claudeCodeProvider = {
     id: 'claude-code',
-    label: 'Claude Code',
+    name: 'Claude Code',
 
-    needsAuth(credentials) {
-        return !!(credentials.autoDetect || credentials.oauthToken);
+    defaultCredentials() {
+        return { oauthToken: '', oauthRefresh: '', oauthExpiry: 0, autoDetect: false };
     },
 
     async fetch(session, credentials) {
@@ -110,45 +148,9 @@ export const claudeCodeProvider = {
                 return { attempted: true, entries: [], errors: [`Claude Code HTTP ${result.status}: ${errDetail}`] };
             }
 
-            return this._parseHeaders(result.headers);
+            return parseResponseHeaders(result.headers);
         } catch (e) {
             return { attempted: true, entries: [], errors: [`Claude Code error: ${e.message || e}`] };
         }
-    },
-
-    /* Parse the flat anthropic-ratelimit-unified-<window>-{utilization,reset}
-     * headers into percent entries. Generic over whatever <window> keys are
-     * present so per-model weekly windows (opus/sonnet) show up on plans
-     * that have them, without failing on plans that don't. */
-    _parseHeaders(headers) {
-        const entries = [];
-        const errors = [];
-
-        const windowKeys = new Set();
-        for (const name of Object.keys(headers)) {
-            const m = /^anthropic-ratelimit-unified-(.+)-utilization$/.exec(name);
-            if (m) windowKeys.add(m[1]);
-        }
-
-        for (const key of windowKeys) {
-            const util = parseFloat(headers[`anthropic-ratelimit-unified-${key}-utilization`]);
-            if (Number.isNaN(util)) continue;
-            const resetRaw = headers[`anthropic-ratelimit-unified-${key}-reset`];
-            const resetTimeIso = resetRaw ? new Date(parseInt(resetRaw, 10) * 1000).toISOString() : null;
-
-            const [name, label] = WINDOW_LABELS[key] || [`Claude Code ${key}`, `${key}:`];
-            const usedPct = util <= 1 ? util * 100 : util;
-            entries.push({
-                kind: 'percent', name, group: 'Claude Code', label,
-                percentUsed: usedPct,
-                percentRemaining: clampPercent(100 - usedPct),
-                resetTimeIso,
-            });
-        }
-
-        if (entries.length === 0)
-            errors.push('Claude Code: no rate-limit headers in response');
-
-        return { attempted: true, entries, errors };
     },
 };

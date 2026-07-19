@@ -21,7 +21,12 @@ export function currentPeakStatus(now = new Date(), windows = []) {
     // Fractional hour within the UTC day.
     const fracHour = hour + min / 60 + sec / 3600;
 
-    const inPeak = windows.some(([s, e]) => fracHour >= s && fracHour < e);
+    if (windows.length === 0)
+        return { inPeak: false, msToChange: null };
+
+    const inPeak = windows.some(([start, end]) => start < end
+        ? fracHour >= start && fracHour < end
+        : start > end && (fracHour >= start || fracHour < end));
 
     const bounds = new Set();
     for (const [s, e] of windows) { bounds.add(s); bounds.add(e); }

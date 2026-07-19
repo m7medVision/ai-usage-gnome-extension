@@ -17,8 +17,9 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import { MODEL_COLORS, modelColor } from './colors.js';
+import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
+import { clampPercent } from '../domain/usage.js';
 
 const BASE = 'https://opencode.ai';
 
@@ -26,10 +27,6 @@ const BASE = 'https://opencode.ai';
  * dashboard: a deepseek-v4-pro call with cost:374228 displays as $0.0037,
  * giving a divisor of 374228 / 0.0037 ≈ 101,142,703. */
 const COST_DIVISOR = 101142703;
-
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
-}
 
 /* Format raw cost units as dollars. */
 function fmtCost(rawCost) {
@@ -41,12 +38,20 @@ function fmtCost(rawCost) {
 
 export const opencodeGoProvider = {
     id: 'opencode-go',
-    label: 'OpenCode Go',
+    name: 'OpenCode Go',
     logoFile: 'opencode-logo.svg',
     fullColorLogo: true,
 
-    needsAuth(credentials) {
-        return !!(credentials.workspaceId && credentials.authCookie);
+    defaultCredentials() {
+        return { workspaceId: '', authCookie: '', serverId: '' };
+    },
+
+    /* Drop the cached x-server-id hashes. GJS does NOT re-evaluate extension
+     * modules on disable→enable — module-level state survives, and a stale
+     * cache after opencode.ai ships a new bundle silently zeroes out the
+     * cost charts. The shell calls this from Extension.disable(). */
+    resetCache() {
+        this._inferredIds = null;
     },
 
     async fetch(session, credentials) {
@@ -476,11 +481,8 @@ export const opencodeGoProvider = {
      * color = its model. Records arrive in SSR with the newest first. */
     _buildRollingModelChart(html) {
         // Each per-request record inlines: model:"X", ..., cost:N, ...
-        // paired with timeCreated:$R[..]=new Date("ISO"). Extract all three
         // in stream order (newest first).
-        const records = [];
         const recRe = /model:"([^"]+)"[\s\S]{0,400}?cost:(\d+)/g;
-        const timeRe = /timeCreated:\$R\[\d+\]=new Date\("([^"]+)"\)/g;
 
         const models = [];
         const costs = [];
@@ -489,10 +491,6 @@ export const opencodeGoProvider = {
             models.push(m[1]);
             costs.push(Number(m[2]));
         }
-        const times = [];
-        while ((m = timeRe.exec(html)) !== null)
-            times.push(new Date(m[1]).getTime());
-
         if (models.length === 0 || costs.length === 0) return null;
 
         // The /usage page already returns the 50 most recent records. Pair

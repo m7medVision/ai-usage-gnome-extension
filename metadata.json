@@ -1,6 +1,6 @@
 {
   "name": "AI Usage Monitor",
-  "description": "Monitor AI service usage limits and balances. Supports Z.AI, OpenCode Go, OpenAI, and DeepSeek.",
+  "description": "Monitor AI service usage limits and balances. Supports Z.AI, OpenCode Go, OpenAI, DeepSeek, and Claude Code.",
   "uuid": "ai-usage-monitor@ahati",
   "shell-version": [
     "45",
@@ -10,7 +10,7 @@
     "49",
     "50"
   ],
-  "version": 1,
+  "version": 2,
   "settings-schema": "org.gnome.shell.extensions.ai-usage",
   "url": "https://z.ai",
   "gettext-domain": "ai-usage-monitor"

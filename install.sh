@@ -1,26 +1,26 @@
 #!/bin/bash
 # Install AI Usage Monitor GNOME Shell Extension
-set -e
+set -euo pipefail
 
 UUID="ai-usage-monitor@ahati"
 EXT_DIR="${HOME}/.local/share/gnome-shell/extensions/${UUID}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Installing AI Usage Monitor extension..."
 echo "Target: ${EXT_DIR}"
 
-# Create directory
+# Remove stale modules from prior layouts, then create a clean destination.
+rm -rf "${EXT_DIR}"
 mkdir -p "${EXT_DIR}/schemas"
 
 # Copy files
-cp extension.js "${EXT_DIR}/"
-cp prefs.js "${EXT_DIR}/"
-cp config.js "${EXT_DIR}/"
-cp local-detect.js "${EXT_DIR}/"
-cp stylesheet.css "${EXT_DIR}/"
-cp metadata.json "${EXT_DIR}/"
-cp -r providers "${EXT_DIR}/"
-cp -r media "${EXT_DIR}/"
-cp schemas/org.gnome.shell.extensions.ai-usage.gschema.xml "${EXT_DIR}/schemas/"
+cp "${SCRIPT_DIR}/extension.js" "${SCRIPT_DIR}/prefs.js" \
+    "${SCRIPT_DIR}/config.js" "${SCRIPT_DIR}/local-detect.js" \
+    "${SCRIPT_DIR}/stylesheet.css" "${SCRIPT_DIR}/metadata.json" "${EXT_DIR}/"
+cp -r "${SCRIPT_DIR}/domain" "${SCRIPT_DIR}/application" \
+    "${SCRIPT_DIR}/ui" "${SCRIPT_DIR}/providers" "${SCRIPT_DIR}/media" "${EXT_DIR}/"
+cp "${SCRIPT_DIR}/schemas/org.gnome.shell.extensions.ai-usage.gschema.xml" \
+    "${EXT_DIR}/schemas/"
 
 # Compile GSettings schema
 glib-compile-schemas "${EXT_DIR}/schemas/"

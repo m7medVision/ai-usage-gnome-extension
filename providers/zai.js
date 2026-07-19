@@ -9,8 +9,9 @@
 
 import Soup from 'gi://Soup?version=3.0';
 import GLib from 'gi://GLib';
-import { MODEL_COLORS, modelColor } from './colors.js';
+import { modelColor } from './colors.js';
 import { USER_AGENT } from './constants.js';
+import { clampPercent } from '../domain/usage.js';
 
 /* Z.AI: peak is 14:00–18:00 UTC+8, i.e. 06:00–10:00 UTC. */
 const ZAI_PEAK_WINDOWS_UTC = [[6, 10]];
@@ -38,10 +39,6 @@ function fmtLocal(date) {
            `${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }
 
-function clampPercent(val) {
-    return Math.max(0, Math.min(100, val));
-}
-
 /* Compact calls formatter for legend totals: 1234 → "1.2K calls". */
 function fmtCalls(n) {
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K calls`;
@@ -62,12 +59,12 @@ function getAuthHeaders(credentials) {
 
 export const zaiProvider = {
     id: 'zai',
-    label: 'Z.AI',
+    name: 'Z.AI (Zhipu)',
     logoFile: 'zai-logo.svg',
     fullColorLogo: true,
 
-    needsAuth(credentials) {
-        return !!(credentials.apiKey || credentials.oauthToken);
+    defaultCredentials() {
+        return { apiKey: '', oauthToken: '', oauthRefresh: '', oauthExpiry: 0, endpoint: 'intl' };
     },
 
     getOAuthConfig(credentials) {
@@ -442,11 +439,6 @@ function hourOf(s) {
     return m ? Number(m[1]) : -1;
 }
 
-/* Extract the date portion "YYYY-MM-DD" from an API time label. */
-function dateOf(s) {
-    return s.substring(0, 10);
-}
-
 /* Z.AI charges extra during peak hours 14:00–18:00 UTC+8. Off-peak is cheaper.
  * These colors highlight which 4-hour buckets fall in the peak window. */
 const PEAK_COLOR = '#e01b24';     // red — peak surcharge window
@@ -456,13 +448,6 @@ const OFFPEAK_COLOR = '#26a269';  // green — off-peak
  * colors each bucket by whether its start hour (UTC+8) is the peak start. */
 const PEAK_START_HOUR_UTC8 = 14;
 
-/* Compute the aligned 4h bucket-start hour (UTC+8) for a given hour, so the
- * peak window 14–18 is exactly one clean bucket per day. Boundaries fall at
- * 02 / 06 / 10 / 14 / 18 / 22. A bucket is "peak" iff it starts at 14. */
-function bucketStartHour(hour) {
-    const offset = (((hour - PEAK_START_HOUR_UTC8) % 4) + 4) % 4;
-    return hour - offset;
-}
 function isPeakBucket(bucketStart) {
     return bucketStart === PEAK_START_HOUR_UTC8;
 }
