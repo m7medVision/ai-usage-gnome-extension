@@ -9,6 +9,7 @@ import { createEntry } from '../domain/usage-entry.js';
 import { createResult, notAttempted } from '../domain/usage-result.js';
 import { createAccount, isAccountEnabled } from '../domain/account.js';
 import { parseResponseHeaders } from '../providers/claude-code.js';
+import { openaiProvider } from '../providers/openai.js';
 import { overviewRightText } from '../ui/overview-text.js';
 import {
     OVERVIEW_ID,
@@ -58,6 +59,57 @@ function testOverviewPrefersFiveHourLimit() {
 
     // Assert
     assertEqual(picked.entry.label, '5h:', 'overview primary limit');
+}
+
+function testOpenAiLabelsWindowByDuration() {
+    // Arrange — live API shape observed 2026-07: the weekly window now
+    // arrives in primary_window with secondary_window null.
+    const payload = {
+        plan_type: 'plus',
+        rate_limit: {
+            allowed: true,
+            limit_reached: false,
+            primary_window: {
+                used_percent: 92,
+                limit_window_seconds: 604800,
+                reset_after_seconds: 400614,
+                reset_at: 1784979685,
+            },
+            secondary_window: null,
+        },
+        code_review_rate_limit: null,
+        credits: { has_credits: false, unlimited: false, balance: '0' },
+    };
+
+    // Act
+    const result = openaiProvider._parseResponse(payload);
+
+    // Assert
+    const bars = result.entries.filter(e => e.kind === 'percent');
+    assertEqual(bars.length, 1, 'no phantom 5h bar when secondary_window is null');
+    assertEqual(bars[0].label, 'Weekly:', 'weekly window in primary slot keeps weekly label');
+    assertEqual(bars[0].name, 'OpenAI (Plus) Weekly', 'weekly entry name');
+    assertEqual(bars[0].percentUsed, 92, 'weekly percent used');
+    assertEqual(bars[0].resetTimeIso, new Date(1784979685 * 1000).toISOString(),
+        'weekly reset time');
+}
+
+function testOpenAiKeepsClassicTwoWindowLayout() {
+    // Arrange — legacy shape: 5h primary + weekly secondary.
+    const payload = {
+        plan_type: 'plus',
+        rate_limit: {
+            primary_window: { used_percent: 10, limit_window_seconds: 18000, reset_at: 1784979685 },
+            secondary_window: { used_percent: 30, limit_window_seconds: 604800, reset_at: 1784979685 },
+        },
+    };
+
+    // Act
+    const result = openaiProvider._parseResponse(payload);
+
+    // Assert
+    const labels = result.entries.filter(e => e.kind === 'percent').map(e => e.label);
+    assertEqual(labels.join(','), '5h:,Weekly:', 'classic two-window layout keeps labels');
 }
 
 function testEmptyPeakWindowsAreStable() {
@@ -309,6 +361,8 @@ function testEveryProviderAdapterOwnsDefaultCredentials() {
 
 testPanelRiskAlwaysUsesConsumedQuota();
 testOverviewPrefersFiveHourLimit();
+testOpenAiLabelsWindowByDuration();
+testOpenAiKeepsClassicTwoWindowLayout();
 testEmptyPeakWindowsAreStable();
 testOvernightPeakWindowWrapsMidnight();
 await testSingleFlightCoalescesConcurrentCalls();
