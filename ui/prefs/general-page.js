@@ -49,6 +49,29 @@ export function buildGeneralPage(window, settings) {
         minimum: 60,
         onChange: value => settings.set_int('critical-usage-threshold', value),
     }));
+
+    const alertGroup = new Adw.PreferencesGroup({ title: _('Usage Alerts') });
+    page.add(alertGroup);
+    const alertsEnabledRow = new Adw.SwitchRow({
+        title: _('Enable usage alerts'),
+        subtitle: _('Show a desktop alert when a quota window reaches the alert threshold.'),
+        active: settings.get_boolean('usage-alerts-enabled'),
+    });
+    alertGroup.add(alertsEnabledRow);
+
+    const alertThresholdRow = thresholdRow({
+        title: _('Alert threshold'),
+        subtitle: _('Show one alert when a quota window reaches this percentage.'),
+        value: settings.get_int('usage-alert-threshold'),
+        minimum: 50,
+        onChange: value => settings.set_int('usage-alert-threshold', value),
+    });
+    alertThresholdRow.sensitive = alertsEnabledRow.active;
+    alertGroup.add(alertThresholdRow);
+    alertsEnabledRow.connect('notify::active', row => {
+        settings.set_boolean('usage-alerts-enabled', row.active);
+        alertThresholdRow.sensitive = row.active;
+    });
 }
 
 function thresholdRow({ title, subtitle, value, minimum, onChange }) {

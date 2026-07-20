@@ -41,5 +41,18 @@
       <description>Usage percentage above which the indicator turns red.</description>
     </key>
 
+    <key name="usage-alerts-enabled" type="b">
+      <default>true</default>
+      <summary>Enable usage alerts</summary>
+      <description>Whether a desktop alert is shown when a quota window reaches the alert threshold.</description>
+    </key>
+
+    <key name="usage-alert-threshold" type="i">
+      <default>90</default>
+      <range min="50" max="100"/>
+      <summary>Usage alert threshold (%)</summary>
+      <description>Usage percentage at which a desktop alert is shown.</description>
+    </key>
+
   </schema>
 </schemalist>

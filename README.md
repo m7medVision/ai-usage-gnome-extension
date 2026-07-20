@@ -12,6 +12,7 @@ Monitor usage limits and balances for multiple AI providers directly from the GN
 - **API key support** — Direct API key authentication for Z.AI and DeepSeek
 - **Balance display** — DeepSeek account balance monitoring
 - **Configurable refresh interval** — 30s to 1hr
+- **Usage alerts** — Native desktop alert when a quota window reaches a configurable threshold
 
 ## Requirements
 
@@ -48,6 +49,8 @@ gnome-extensions enable ai-usage-monitor@m7medvision
 | Show logos | Provider logos on tabs | Enabled |
 | High threshold | % for orange warning | 80% |
 | Critical threshold | % for red alert | 95% |
+| Usage alerts | Enable native desktop quota alerts | Enabled |
+| Alert threshold | % used that triggers one alert per quota window | 90% |
 | Refresh interval | How often to fetch data | 300s |
 
 Account credentials are stored in `~/.local/share/.ai-usage-ext/config.json`.
