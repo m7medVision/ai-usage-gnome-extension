@@ -11,6 +11,41 @@ import { clampPercent } from '../domain/usage.js';
 
 const OPENAI_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
 
+const HOUR_SECS = 3600;
+const DAY_SECS = 24 * HOUR_SECS;
+
+/* OpenAI no longer guarantees which quota window lives in primary_window
+ * (weekly limits now arrive there with secondary_window: null), so derive
+ * the label from limit_window_seconds instead of assuming by slot. */
+function windowLabel(limitWindowSeconds, fallback) {
+    if (!limitWindowSeconds || limitWindowSeconds <= 0)
+        return fallback;
+    if (limitWindowSeconds <= 6 * HOUR_SECS)
+        return ['5h', '5h:'];
+    if (limitWindowSeconds <= 2 * DAY_SECS)
+        return ['Daily', 'Daily:'];
+    if (limitWindowSeconds <= 8 * DAY_SECS)
+        return ['Weekly', 'Weekly:'];
+    if (limitWindowSeconds <= 32 * DAY_SECS)
+        return ['Monthly', 'Monthly:'];
+    return fallback;
+}
+
+function windowEntry(window, group, fallback) {
+    const [suffix, label] = windowLabel(window.limit_window_seconds, fallback);
+    const resetIso = window.reset_at
+        ? new Date(window.reset_at * 1000).toISOString()
+        : (window.reset_after_seconds
+            ? new Date(Date.now() + window.reset_after_seconds * 1000).toISOString()
+            : null);
+    return {
+        kind: 'percent', name: `${group} ${suffix}`, group, label,
+        percentUsed: window.used_percent,
+        percentRemaining: clampPercent(100 - window.used_percent),
+        resetTimeIso: resetIso,
+    };
+}
+
 function getAuthHeaders(credentials) {
     const oauthToken = credentials.oauthToken;
     if (oauthToken && oauthToken.length > 0) {
@@ -81,35 +116,12 @@ export const openaiProvider = {
         if (planType.includes('pro')) group = 'OpenAI (Pro)';
         else if (planType.includes('plus')) group = 'OpenAI (Plus)';
 
-        // Primary window (hourly / ~5h)
-        const remainingPct = clampPercent(100 - primary.used_percent);
-        const resetIso = primary.reset_at
-            ? new Date(primary.reset_at * 1000).toISOString()
-            : (primary.reset_after_seconds
-                ? new Date(Date.now() + primary.reset_after_seconds * 1000).toISOString()
-                : null);
+        // Primary window (slot fallback: hourly / ~5h)
+        entries.push(windowEntry(primary, group, ['5h', '5h:']));
 
-        entries.push({
-            kind: 'percent', name: `${group} 5h`, group, label: '5h:',
-            percentUsed: primary.used_percent,
-            percentRemaining: remainingPct,
-            resetTimeIso: resetIso,
-        });
-
-        // Secondary window (weekly)
+        // Secondary window (slot fallback: weekly)
         if (secondary) {
-            const weeklyRemaining = clampPercent(100 - secondary.used_percent);
-            const weeklyResetIso = secondary.reset_at
-                ? new Date(secondary.reset_at * 1000).toISOString()
-                : (secondary.reset_after_seconds
-                    ? new Date(Date.now() + secondary.reset_after_seconds * 1000).toISOString()
-                    : null);
-            entries.push({
-                kind: 'percent', name: `${group} Weekly`, group, label: 'Weekly:',
-                percentUsed: secondary.used_percent,
-                percentRemaining: weeklyRemaining,
-                resetTimeIso: weeklyResetIso,
-            });
+            entries.push(windowEntry(secondary, group, ['Weekly', 'Weekly:']));
         }
 
         // Code review window
