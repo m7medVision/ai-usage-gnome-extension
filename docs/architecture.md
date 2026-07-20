@@ -58,7 +58,7 @@ normalization.
 
 - `indicator.js`: lifecycle Mediator; contains no chart implementation.
 - `shell-notifier.js`: GNOME Shell adapter that presents application alert events.
-- `tabs.js`, `overview.js`, `content.js`: popup-region views.
+- `provider-selector.js`, `overview.js`, `content.js`: popup-region views.
 - `entry-view/`: renderer Strategy per `EntryKind`.
 - `menu.js`, `panel-icon.js`: widget builders.
 - `peak-ticker.js`, `config-monitor.js`: resource owners with symmetric cleanup.

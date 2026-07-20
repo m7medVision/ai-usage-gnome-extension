@@ -1,8 +1,8 @@
-/* Overview view — the all-accounts-at-a-glance tab. Renders one compact
+/* Overview view — the all-accounts-at-a-glance selection. Renders one compact
  * row per account, each showing that account's primary limit ("the 5h
  * window" when present, else the first percent entry, else the first entry
  * of any kind) with a clickable target that switches to that account's own
- * tab for full detail.
+ * provider selection for full detail.
  *
  * Pure functions over a passed-in parent + ctx. The Indicator owns
  * _results; this module reads it through the ctx.results map. */
@@ -15,10 +15,10 @@ import { overviewRightText } from './overview-text.js';
 
 /* Render one compact account row. Reads the account's latest fetch result
  * from results[account.id], selects the primary entry, and wires the click
- * to onSelectAccount(account.id). */
+ * to onSelectProvider(account.provider). */
 export function addOverviewRow({ parent, account, provider, results,
-                                  showLogos, displayMode, logoProvider,
-                                  colorForPercent, onSelectAccount }) {
+                                   showLogos, displayMode, logoProvider,
+                                   colorForPercent, onSelectProvider }) {
     const res = results[account.id];
     const picked = pickPrimaryEntry(res);
 
@@ -64,18 +64,18 @@ export function addOverviewRow({ parent, account, provider, results,
 
     btn.set_child(box);
     btn.connect('clicked', () => {
-        onSelectAccount(account.id);
+        onSelectProvider(account.provider);
         return Clutter.EVENT_PROPAGATE;
     });
     parent.add_child(btn);
 }
 
-/* Render the overview tab: one row per account, separated by thin dividers.
+/* Render the overview: one row per account, separated by thin dividers.
  * The caller passes the parent (the content box) and a ctx carrying the
  * result map + presentation callbacks. */
 export function renderOverview({ parent, accounts, results, showLogos,
-                                  displayMode, logoProvider, colorForPercent,
-                                  onSelectAccount }) {
+                                   displayMode, logoProvider, colorForPercent,
+                                   onSelectProvider }) {
     let first = true;
     for (const { account, provider } of accounts) {
         if (!first) addSeparator(parent);
@@ -83,7 +83,7 @@ export function renderOverview({ parent, accounts, results, showLogos,
         addOverviewRow({
             parent, account, provider, results,
             showLogos, displayMode, logoProvider,
-            colorForPercent, onSelectAccount,
+            colorForPercent, onSelectProvider,
         });
     }
 }

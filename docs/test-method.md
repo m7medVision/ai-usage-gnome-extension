@@ -39,6 +39,14 @@ gnome-extensions enable ai-usage-monitor@m7medvision
 # 7. Repeat from step 4
 ```
 
+### Provider selector checks
+
+1. Configure two accounts for one provider and one account for another. The selector must list `📊 Overview` and each provider once.
+2. Select a provider. Its content must include all of that provider's accounts and exclude every other provider.
+3. In Overview, click an account row. The selector must switch to that account's provider and show all of its accounts.
+4. Remove or disable a selected provider's last account, then refresh. The selector and content must fall back to Overview.
+5. In dark mode, verify native menu colors, the selected checkmark, mouse/keyboard selection, and no orphaned selector after closing or disabling the extension.
+
 ## 3. Reload script
 
 Use the repository's `dev-reload.sh`; its copy list is kept in sync with runtime modules.
@@ -194,7 +202,7 @@ XDG_DATA_HOME="$(mktemp -d)" gjs -m tests/config.test.js
 │   └── account-repository.js
 ├── ui/                   ← Presentation
 │   ├── extension-entry.js, indicator.js
-│   ├── tabs.js, overview.js, content.js, menu.js
+│   ├── provider-selector.js, provider-filter.js, provider-logo.js, overview.js, content.js, menu.js
 │   ├── panel-icon.js, peak-ticker.js, config-monitor.js
 │   ├── format.js         ← palette + formatters
 │   ├── usage-color.js    ← severity → color

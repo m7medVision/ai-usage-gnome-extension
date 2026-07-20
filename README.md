@@ -7,7 +7,7 @@ Monitor usage limits and balances for multiple AI providers directly from the GN
 - **Multi-provider, multi-account** — Add unlimited accounts per provider, each fetched independently
 - **Live usage display** — Color-coded indicator (green/orange/red) in the top panel shows worst-case usage
 - **Progress bars** — Visual free/used quota bars with reset times for each usage window
-- **Provider tabs** — Switch between accounts with logos in the popup menu
+- **Provider selector** — Filter the popup by overview or provider
 - **OAuth login** — Browser-based OAuth for Z.AI accounts
 - **API key support** — Direct API key authentication for Z.AI and DeepSeek
 - **Balance display** — DeepSeek account balance monitoring
@@ -46,7 +46,7 @@ gnome-extensions enable ai-usage-monitor@m7medvision
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Display mode | Show "used" or "remaining" quota | Used |
-| Show logos | Provider logos on tabs | Enabled |
+| Show logos | Provider logos in overview | Enabled |
 | High threshold | % for orange warning | 80% |
 | Critical threshold | % for red alert | 95% |
 | Usage alerts | Enable native desktop quota alerts | Enabled |

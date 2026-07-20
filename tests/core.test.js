@@ -10,6 +10,12 @@ import { createResult, notAttempted } from '../domain/usage-result.js';
 import { createAccount, isAccountEnabled } from '../domain/account.js';
 import { parseResponseHeaders } from '../providers/claude-code.js';
 import { overviewRightText } from '../ui/overview-text.js';
+import {
+    OVERVIEW_ID,
+    normalizeProviderSelection,
+    providerOptions,
+    selectedProviderAccounts,
+} from '../ui/provider-filter.js';
 
 function assertEqual(actual, expected, message) {
     if (actual !== expected)
@@ -377,3 +383,29 @@ function testOverviewRightTextCoversEveryState() {
 }
 
 testOverviewRightTextCoversEveryState();
+
+function testProviderSelectionGroupsAccounts() {
+    // Arrange
+    const accounts = [
+        { account: { id: 'openai-personal', provider: 'openai' }, provider: { name: 'OpenAI' } },
+        { account: { id: 'openai-work', provider: 'openai' }, provider: { name: 'OpenAI' } },
+        { account: { id: 'claude', provider: 'claude-code' }, provider: { name: 'Claude Code' } },
+    ];
+
+    // Act
+    const options = providerOptions(accounts);
+    const selected = selectedProviderAccounts(accounts, 'openai');
+    const overview = selectedProviderAccounts(accounts, OVERVIEW_ID);
+
+    // Assert
+    assertEqual(options.length, 2, 'one selector item per provider');
+    assertEqual(options[0].id, 'openai', 'provider order follows configured accounts');
+    assertEqual(selected.map(({ account }) => account.id).join(','), 'openai-personal,openai-work',
+        'provider selection includes all and only matching accounts');
+    assertEqual(overview.map(({ account }) => account.id).join(','),
+        'openai-personal,openai-work,claude', 'overview includes every configured account');
+    assertEqual(normalizeProviderSelection(accounts, 'missing'), OVERVIEW_ID,
+        'removed provider falls back to overview');
+}
+
+testProviderSelectionGroupsAccounts();

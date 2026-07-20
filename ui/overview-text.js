@@ -1,4 +1,4 @@
-/* Pure presentation helper for the overview tab: converts a picked primary
+/* Pure presentation helper for the overview selection: converts a picked primary
  * entry into the right-aligned summary string ("5h · 17% used", "No data
  * yet", etc.). Separated from ui/overview.js because that module imports
  * gi://St, which is unavailable outside the GNOME Shell process — keeping

@@ -25,7 +25,7 @@ export function buildGeneralPage(window, settings) {
 
     const showLogosRow = new Adw.SwitchRow({
         title: _('Show provider logos'),
-        subtitle: _('Display provider logos on the tabs in the popup menu.'),
+        subtitle: _('Display provider logos in the popup overview.'),
         active: settings.get_boolean('show-logos'),
     });
     displayGroup.add(showLogosRow);

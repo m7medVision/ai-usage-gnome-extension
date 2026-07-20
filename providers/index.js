@@ -1,7 +1,7 @@
 /* Provider Strategy registry.
  *
  * Each adapter is self-describing: it exposes its registry id, a human name
- * (used in tabs, overview, and the Preferences "Add Account" dropdown), a
+ * (used in the selector, overview, and the Preferences "Add Account" dropdown), a
  * logo file, optional OAuth config, and a `defaultCredentials()` factory that
  * owns the shape of its credential bag — so adding a credential field
  * touches only the provider, not the registry.

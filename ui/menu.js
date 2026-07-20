@@ -11,10 +11,31 @@ export function buildMenu({ menuBox, onRefresh, onOpenPreferences }) {
     const headerTitle = new St.Label({
         text: 'AI Usage',
         style_class: 'ai-usage-header-title',
-        x_expand: true,
         y_align: Clutter.ActorAlign.CENTER,
     });
     headerBox.add_child(headerTitle);
+
+    const providerSelectorButton = new St.Button({
+        style_class: 'ai-usage-header-button ai-usage-provider-selector',
+        can_focus: true,
+    });
+    const providerSelectorContent = new St.BoxLayout({
+        style_class: 'ai-usage-provider-selector-content',
+    });
+    const providerSelectorLabel = new St.Label({
+        text: 'Overview',
+        style_class: 'ai-usage-provider-selector-label',
+        y_align: Clutter.ActorAlign.CENTER,
+    });
+    providerSelectorContent.add_child(providerSelectorLabel);
+    providerSelectorContent.add_child(new St.Icon({
+        icon_name: 'pan-down-symbolic',
+        style_class: 'ai-usage-provider-selector-arrow',
+        y_align: Clutter.ActorAlign.CENTER,
+    }));
+    providerSelectorButton.set_child(providerSelectorContent);
+    headerBox.add_child(providerSelectorButton);
+    headerBox.add_child(new St.Widget({ x_expand: true }));
 
     const refreshBtn = iconButton('view-refresh-symbolic');
     refreshBtn.connect('clicked', () => {
@@ -31,11 +52,6 @@ export function buildMenu({ menuBox, onRefresh, onOpenPreferences }) {
     headerBox.add_child(settingsBtn);
     menuBox.add_child(headerBox);
 
-    const tabsContainer = new St.BoxLayout({
-        style_class: 'ai-usage-tabs-container',
-    });
-    menuBox.add_child(tabsContainer);
-
     const contentBox = new St.BoxLayout({
         style_class: 'ai-usage-usage-section',
         vertical: true,
@@ -45,9 +61,10 @@ export function buildMenu({ menuBox, onRefresh, onOpenPreferences }) {
     return {
         headerBox,
         headerTitle,
+        providerSelectorButton,
+        providerSelectorLabel,
         refreshBtn,
         settingsBtn,
-        tabsContainer,
         contentBox,
     };
 }
