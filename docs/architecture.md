@@ -11,6 +11,7 @@ GNOME entry shims
 UI and application
   -> provider adapters
   -> config/local-detection infrastructure
+  -> alert-state infrastructure
 ```
 
 `domain/` imports no GNOME APIs. `application/` contains orchestration without
@@ -29,6 +30,7 @@ remote provider APIs to the shared `UsageResult` contract.
 ### Domain
 
 - `usage.js`: percentage rules and primary-entry selection.
+- `usage-alert-policy.js`: pure threshold-crossing, rearm, and alert de-duplication rules.
 - `peak.js`: peak-window state calculations.
 - `entry-kind.js`: discriminated entry-kind contract.
 - `account.js`, `usage-entry.js`, `usage-result.js`: boundary value shapes.
@@ -40,6 +42,7 @@ remote provider APIs to the shared `UsageResult` contract.
 - `scheduler.js`: timer lifecycle and stale-callback invalidation.
 - `single-flight.js`: coalesces concurrent requests.
 - `account-repository.js`: shell-side account loading and error state.
+- `usage-alert-service.js`: evaluates alert policy, persists its ledger, and emits notification events through injected ports.
 
 ### Providers
 
@@ -47,9 +50,14 @@ remote provider APIs to the shared `UsageResult` contract.
 metadata, default credential shape, authentication, transport, and response
 normalization.
 
+### Infrastructure
+
+- `alert-state-store.js`: cache-backed, non-secret persistence for alert de-duplication across Shell restarts.
+
 ### Shell UI
 
 - `indicator.js`: lifecycle Mediator; contains no chart implementation.
+- `shell-notifier.js`: GNOME Shell adapter that presents application alert events.
 - `tabs.js`, `overview.js`, `content.js`: popup-region views.
 - `entry-view/`: renderer Strategy per `EntryKind`.
 - `menu.js`, `panel-icon.js`: widget builders.
@@ -85,6 +93,7 @@ normalization.
 4. Domain modules must not import `gi://`, St, GTK, Adwaita, or Shell resources.
 5. Provider failures return `UsageResult.errors`; one provider cannot reject the batch.
 6. Native resources must expose and invoke cleanup during disable/window close.
+7. Alert policy is domain-only; cache persistence and GNOME notifications are injected application dependencies.
 
 ## Verification
 

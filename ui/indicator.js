@@ -15,6 +15,8 @@ import * as config from '../config.js';
 import { RefreshService } from '../application/refresh-service.js';
 import { FetchService } from '../application/fetch-service.js';
 import { AccountRepository } from '../application/account-repository.js';
+import { UsageAlertService } from '../application/usage-alert-service.js';
+import { createAlertStateStore } from '../infrastructure/alert-state-store.js';
 import { worstPercentUsed } from '../domain/usage.js';
 import { PROVIDERS } from '../providers/index.js';
 import { colorForPercent } from './usage-color.js';
@@ -24,6 +26,7 @@ import { createPanelIcon, updatePanelIcon } from './panel-icon.js';
 import { buildMenu } from './menu.js';
 import { createPeakTicker } from './peak-ticker.js';
 import { createConfigMonitor } from './config-monitor.js';
+import { createShellNotifier } from './shell-notifier.js';
 
 const MIN_REFRESH_DELAY_MS = 1000;
 
@@ -40,6 +43,11 @@ export const Indicator = GObject.registerClass(
             this._results = {};              // keyed by account id
             this._activeAccountId = null;
             this._accounts = new AccountRepository(PROVIDERS);
+            this._alerts = new UsageAlertService({
+                stateStore: createAlertStateStore({ logger: message => log(message) }),
+                notify: createShellNotifier(),
+                logger: message => log(message),
+            });
             this._refresh = new RefreshService({
                 fetch: async () => this._applyResults(
                     await this._fetcher.fetchAll(this._getAccounts())),
@@ -156,9 +164,25 @@ export const Indicator = GObject.registerClass(
                 return;
             for (const [accountId, result] of results.entries())
                 this._results[accountId] = result;
+            this._sendUsageAlerts(results);
             this._updatePanel();
             this._renderTabs();
             this._renderContent();
+        }
+
+        _sendUsageAlerts(results) {
+            try {
+                this._alerts.process({
+                    accounts: this._getAccounts().map(({ account }) => account),
+                    results,
+                    enabled: this._settings.get_boolean('usage-alerts-enabled'),
+                    threshold: this._settings.get_int('usage-alert-threshold'),
+                });
+            } catch (error) {
+                // Notifications are non-critical: rendering must continue even
+                // if a local cache or Shell integration unexpectedly fails.
+                logError(error, 'AI Usage alert processing failed');
+            }
         }
 
         async _refreshNow() {

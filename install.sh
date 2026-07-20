@@ -18,7 +18,8 @@ cp "${SCRIPT_DIR}/extension.js" "${SCRIPT_DIR}/prefs.js" \
     "${SCRIPT_DIR}/config.js" "${SCRIPT_DIR}/local-detect.js" \
     "${SCRIPT_DIR}/stylesheet.css" "${SCRIPT_DIR}/metadata.json" "${EXT_DIR}/"
 cp -r "${SCRIPT_DIR}/domain" "${SCRIPT_DIR}/application" \
-    "${SCRIPT_DIR}/ui" "${SCRIPT_DIR}/providers" "${SCRIPT_DIR}/media" "${EXT_DIR}/"
+    "${SCRIPT_DIR}/infrastructure" "${SCRIPT_DIR}/ui" "${SCRIPT_DIR}/providers" \
+    "${SCRIPT_DIR}/media" "${EXT_DIR}/"
 cp "${SCRIPT_DIR}/schemas/org.gnome.shell.extensions.ai-usage.gschema.xml" \
     "${EXT_DIR}/schemas/"
 
