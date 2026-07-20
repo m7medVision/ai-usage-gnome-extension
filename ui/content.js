@@ -1,57 +1,72 @@
-/* Content view — dispatches the active tab's body into the popup content
- * area. Reads the config error, account set, result map, and active tab id
+/* Content view — dispatches the active provider's body into the popup content
+ * area. Reads the config error, account set, result map, and active selection
  * from ctx; delegates per-account bodies to renderOverview (for the
- * synthetic overview tab) or addEntry (for a single account's fetch
+ * synthetic overview selection) or addEntry (for each selected account's fetch
  * results). Pure dispatcher — no widget construction beyond what the
  * shared helpers provide. */
 
-import { OVERVIEW_ID } from './tabs.js';
+import { OVERVIEW_ID, selectedProviderAccounts } from './provider-filter.js';
 import { renderOverview } from './overview.js';
 import { addEntry } from './entry-view/index.js';
-import { addHint, addError, addSeparator } from './entry-view/shared.js';
+import { addHint, addError, addSeparator, addTitle } from './entry-view/shared.js';
 
-/* Render the content area for the currently active tab.
+/* Render the content area for the currently active provider selection.
  *
  * ctx fields:
  *   parent            - St.BoxLayout to render into (must already be empty)
  *   accounts          - [{ account, provider }] from AccountRepository
  *   results           - Map account.id → UsageResult (latest fetch)
- *   activeAccountId   - account id currently selected, or OVERVIEW_ID
+ *   activeProviderId  - provider id currently selected, or OVERVIEW_ID
  *   configError       - lastError from AccountRepository (null when healthy)
  *   ctx               - the entry-renderer context (displayMode,
  *                       colorForPercent, onPeakTick) passed through to
  *                       addEntry / renderOverview
- *   onSelectAccount   - called when the user clicks an overview row
+ *   onSelectProvider  - called when the user clicks an overview row
  *   onPeakTick        - registered per-second update callbacks
  *
  * Returns the list of peak-tick callbacks registered during this render
  * (the Indicator assigns them to _peakWidgets). */
-export function renderContent({ parent, accounts, results, activeAccountId,
-                                 configError, ctx, onSelectAccount }) {
+export function renderContent({ parent, accounts, results, activeProviderId,
+                                  configError, ctx, onSelectProvider }) {
     if (configError) {
         addError(parent, configError);
         return;
     }
 
-    if (activeAccountId === OVERVIEW_ID) {
+    if (activeProviderId === OVERVIEW_ID) {
         renderOverview({
             parent, accounts, results,
             showLogos: ctx.showLogos,
             displayMode: ctx.displayMode,
             logoProvider: ctx.logoProvider,
             colorForPercent: ctx.colorForPercent,
-            onSelectAccount,
+            onSelectProvider,
         });
         return;
     }
 
-    const active = accounts.find(a => a.account.id === activeAccountId);
-    if (!active) {
+    const activeAccounts = selectedProviderAccounts(accounts, activeProviderId);
+    if (activeAccounts.length === 0) {
         addHint(parent, 'Configure accounts in Preferences…');
         return;
     }
 
-    const res = results[active.account.id];
+    const showAccountTitles = activeAccounts.length > 1;
+    let first = true;
+    for (const { account, provider } of activeAccounts) {
+        if (!first) addSeparator(parent);
+        first = false;
+        renderAccount({
+            parent, account, provider, results, ctx, showAccountTitles,
+        });
+    }
+}
+
+function renderAccount({ parent, account, provider, results, ctx, showAccountTitles }) {
+    if (showAccountTitles)
+        addTitle(parent, account.label || provider.name);
+
+    const res = results[account.id];
     if (!res || !res.attempted) {
         addHint(parent, 'No data yet — refresh to fetch.');
         return;

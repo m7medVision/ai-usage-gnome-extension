@@ -41,37 +41,31 @@
     icon-size: 16px;
 }
 
-/* Provider tabs */
-.ai-usage-tabs-container {
-    padding: 10px;
-    spacing: 5px;
+.ai-usage-provider-selector {
+    margin-left: 0;
+    padding: 4px 6px;
 }
 
-.ai-usage-tab {
-    padding: 5px 10px;
-    border-radius: 8px;
-    margin-right: 5px;
+.ai-usage-provider-selector-content {
+    spacing: 4px;
 }
 
-.ai-usage-tab:hover {
-    background-color: rgba(255, 255, 255, 0.07);
-}
-
-.ai-usage-tab-active {
-    background-color: rgba(255, 255, 255, 0.15);
+.ai-usage-provider-selector-label {
     font-weight: bold;
 }
 
-.ai-usage-tab-icon {
+.ai-usage-provider-selector-arrow {
+    icon-size: 12px;
+}
+
+.ai-usage-provider-logo {
     margin-right: 6px;
     icon-size: 16px;
     color: white;
     -st-icon-style: symbolic;
 }
 
-/* Full-color brand logos: keep original colors, don't force symbolic.
-   Self-contained (no -st-icon-style, no forced color) so fills render as-is. */
-.ai-usage-tab-icon-color {
+.ai-usage-provider-logo-color {
     margin-right: 6px;
     icon-size: 16px;
 }
@@ -104,7 +98,7 @@
     font-style: italic;
 }
 
-/* Overview tab: one compact clickable row per account */
+/* Overview: one compact clickable row per account */
 .ai-usage-overview-row {
     padding: 8px 4px;
     border-radius: 6px;

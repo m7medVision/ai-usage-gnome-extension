@@ -1,7 +1,7 @@
 /* AI Usage Monitor — GNOME Shell Extension
  *
  * Composition root for the shell-side indicator. Builds the panel button,
- * the popup menu (header + tabs + content), and wires the application
+ * the popup menu (header + provider selector + content), and wires the application
  * services (RefreshService, AccountRepository) to GNOME actors. Entry
  * rendering lives in ui/entry-view/, lifecycle in application/, domain
  * rules in domain/. */
@@ -20,7 +20,8 @@ import { createAlertStateStore } from '../infrastructure/alert-state-store.js';
 import { worstPercentUsed } from '../domain/usage.js';
 import { PROVIDERS } from '../providers/index.js';
 import { colorForPercent } from './usage-color.js';
-import { renderTabs, providerLogo } from './tabs.js';
+import { providerLogo } from './provider-logo.js';
+import { createProviderSelector } from './provider-selector.js';
 import { renderContent } from './content.js';
 import { createPanelIcon, updatePanelIcon } from './panel-icon.js';
 import { buildMenu } from './menu.js';
@@ -41,7 +42,7 @@ export const Indicator = GObject.registerClass(
             this._session = new Soup.Session();
             this._fetcher = new FetchService({ session: this._session });
             this._results = {};              // keyed by account id
-            this._activeAccountId = null;
+            this._activeProviderId = null;
             this._accounts = new AccountRepository(PROVIDERS);
             this._alerts = new UsageAlertService({
                 stateStore: createAlertStateStore({ logger: message => log(message) }),
@@ -74,8 +75,18 @@ export const Indicator = GObject.registerClass(
             });
             this._headerTitle = menu.headerTitle;
             this._refreshBtn = menu.refreshBtn;
-            this._tabsContainer = menu.tabsContainer;
             this._contentBox = menu.contentBox;
+            this._providerSelector = createProviderSelector({
+                button: menu.providerSelectorButton,
+                label: menu.providerSelectorLabel,
+                onSelect: id => {
+                    this._activeProviderId = id;
+                    this._renderContent();
+                },
+            });
+            this._peakWidgets = null;     // populated by renderers via ctx.onPeakTick
+            this._renderProviderSelector();
+            this._renderContent();
 
             this._settingsId = this._settings.connect('changed', () => {
                 this._scheduleRefresh();
@@ -87,11 +98,13 @@ export const Indicator = GObject.registerClass(
             /* Peak-status ticker: ticks every 1s while the menu is open so
              * the traffic-light countdown stays live. Started on open, stopped
              * on close — never runs with the menu hidden. */
-            this._peakWidgets = null;     // populated by renderers via ctx.onPeakTick
             this._peakTicker = createPeakTicker(() => this._peakWidgets);
             this.menu.connect('open-state-changed', (menu, open) => {
                 if (open) this._peakTicker.start();
-                else this._peakTicker.stop();
+                else {
+                    this._peakTicker.stop();
+                    this._providerSelector.close();
+                }
             });
         }
 
@@ -112,20 +125,12 @@ export const Indicator = GObject.registerClass(
             };
         }
 
-        /* ── Tabs ── */
+        /* ── Provider selector ── */
 
-        _renderTabs() {
-            this._activeAccountId = renderTabs({
-                container: this._tabsContainer,
+        _renderProviderSelector() {
+            this._activeProviderId = this._providerSelector.render({
                 accounts: this._getAccounts(),
-                activeAccountId: this._activeAccountId,
-                showLogos: this._settings.get_boolean('show-logos'),
-                logoProvider: p => providerLogo(p, this._ext.path),
-                onSelect: id => {
-                    this._activeAccountId = id;
-                    this._renderTabs();
-                    this._renderContent();
-                },
+                selectedId: this._activeProviderId,
             });
         }
 
@@ -141,12 +146,12 @@ export const Indicator = GObject.registerClass(
                 parent: this._contentBox,
                 accounts: this._getAccounts(),
                 results: this._results,
-                activeAccountId: this._activeAccountId,
+                activeProviderId: this._activeProviderId,
                 configError: this._accounts.lastError,
                 ctx: this._entryContext(),
-                onSelectAccount: id => {
-                    this._activeAccountId = id;
-                    this._renderTabs();
+                onSelectProvider: id => {
+                    this._activeProviderId = id;
+                    this._renderProviderSelector();
                     this._renderContent();
                 },
             });
@@ -166,7 +171,7 @@ export const Indicator = GObject.registerClass(
                 this._results[accountId] = result;
             this._sendUsageAlerts(results);
             this._updatePanel();
-            this._renderTabs();
+            this._renderProviderSelector();
             this._renderContent();
         }
 
@@ -209,6 +214,7 @@ export const Indicator = GObject.registerClass(
             this._session.abort();
             this._peakTicker.stop();
             this._peakWidgets = null;
+            this._providerSelector.destroy();
             if (this._settingsId) { this._settings.disconnect(this._settingsId); this._settingsId = 0; }
             this._configMonitor.dispose();
             super.destroy();

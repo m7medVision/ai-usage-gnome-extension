@@ -17,7 +17,7 @@
     <key name="show-logos" type="b">
       <default>true</default>
       <summary>Show provider logos</summary>
-      <description>Whether to show provider logos on the provider tabs in the popup menu.</description>
+      <description>Whether to show provider logos in the popup overview.</description>
     </key>
 
     <key name="display-mode" type="s">
